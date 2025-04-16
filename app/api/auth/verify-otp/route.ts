@@ -9,7 +9,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, otp, name, password } = await request.json();
+    const { email, otp, name, password, role } = await request.json();
     console.log('Received verification request:', { email, otp }); // Debug log
 
     if (!email || !otp) {
@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
       name,
       email,
       password: hashedPassword,
+      role: role || 'user',
       authType: 'email'
     });
 
@@ -62,7 +63,8 @@ export async function POST(request: NextRequest) {
       {
         userId: user._id,
         email: user.email,
-        name: user.name
+        name: user.name,
+        role: user.role
       },
       JWT_SECRET,
       { expiresIn: '24h' }
@@ -76,6 +78,7 @@ export async function POST(request: NextRequest) {
           id: user._id,
           name: user.name,
           email: user.email,
+          role: user.role
         }
       },
       { status: 200 }

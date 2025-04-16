@@ -48,7 +48,13 @@ export async function POST(request: NextRequest) {
       {
         userId: user._id,
         email: user.email,
-        role: user.role
+        name: user.name,
+        role: user.role,
+        phoneNumber: user.phoneNumber || '',
+        address: user.address || '',
+        state: user.state || '',
+        country: user.country || '',
+        zipCode: user.zipCode || ''
       },
       process.env.JWT_SECRET!,
       { expiresIn: '1d' }
@@ -63,7 +69,12 @@ export async function POST(request: NextRequest) {
           id: user._id,
           name: user.name,
           email: user.email,
-          role: user.role
+          role: user.role,
+          phoneNumber: user.phoneNumber || '',
+          address: user.address || '',
+          state: user.state || '',
+          country: user.country || '',
+          zipCode: user.zipCode || ''
         }
       },
       { status: 200 }

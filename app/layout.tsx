@@ -3,8 +3,8 @@ import './globals.css';
 import { Toaster } from 'react-hot-toast';
 
 export const metadata: Metadata = {
-  title: 'JWT Authentication App',
-  description: 'A simple JWT authentication app built with Next.js',
+  title: 'Text To BPMN Process & Decision Engine',
+  description: '3 Modules with Next.js',
 };
 
 export default function RootLayout({

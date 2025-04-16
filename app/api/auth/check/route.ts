@@ -24,7 +24,14 @@ export async function GET() {
       authenticated: true,
       user: {
         id: payload.userId,
-        email: payload.email
+        email: payload.email,
+        name: payload.name,
+        role: payload.role,
+        phoneNumber: payload.phoneNumber || '',
+        address: payload.address || '',
+        state: payload.state || '',
+        country: payload.country || '',
+        zipCode: payload.zipCode || ''
       }
     });
   } catch (error) {

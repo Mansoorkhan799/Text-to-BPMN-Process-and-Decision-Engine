@@ -57,37 +57,62 @@ export async function GET(request: NextRequest) {
     await connectDB();
     console.log('MongoDB connected in Google callback route');
     
-    // Check if user exists
-    let user = await User.findOne({ email: userData.email });
+    // First check if user exists by googleId
+    let user = await User.findOne({ googleId: userData.id });
     
+    // If not found by googleId, check by email
     if (!user) {
-      // Create a new user
-      user = await User.create({
-        name: userData.name,
-        email: userData.email,
-        // For Google auth users, we set a random password they can't use
-        // They'll always sign in with Google
-        password: Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10),
-        googleId: userData.id,
-        picture: userData.picture,
-        authType: 'google'
-      });
-      console.log('✓ New Google user created in MongoDB:', user._id);
+      // Check if an account with this email already exists
+      const existingEmailUser = await User.findOne({ email: userData.email });
+      
+      if (existingEmailUser) {
+        // Link existing account with Google
+        existingEmailUser.googleId = userData.id;
+        existingEmailUser.picture = userData.picture || existingEmailUser.picture;
+        
+        // If they already have an authType, add Google as another method
+        // but don't change their existing role
+        if (existingEmailUser.authType && existingEmailUser.authType !== 'google') {
+          console.log(`User ${existingEmailUser.email} has linked Google account to existing ${existingEmailUser.authType} account`);
+        }
+        
+        existingEmailUser.authType = 'google';
+        await existingEmailUser.save();
+        console.log('✓ Linked Google account to existing user:', existingEmailUser._id);
+        user = existingEmailUser;
+      } else {
+        // Create new user with Google account
+        user = await User.create({
+          name: userData.name,
+          email: userData.email,
+          password: Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10),
+          googleId: userData.id,
+          picture: userData.picture,
+          role: 'user', // Default role for new users
+          authType: 'google'
+        });
+        console.log('✓ New Google user created in MongoDB:', user._id);
+      }
     } else {
-      // Update existing user with Google data if needed
-      user.googleId = userData.id;
+      // User found by Google ID - update their profile if needed
+      user.name = userData.name || user.name;
       user.picture = userData.picture || user.picture;
-      user.authType = 'google'; // Set or update the auth type
       await user.save();
-      console.log('✓ Existing user updated with Google data:', user._id);
+      console.log('✓ Existing Google user updated:', user._id);
     }
 
-    // Create JWT token with MongoDB user ID
+    // Create JWT token with all relevant user data
     const token = jwt.sign(
       {
         userId: user._id,
         email: user.email,
         name: user.name,
+        role: user.role, // Include the user's role from the database
+        phoneNumber: user.phoneNumber || '',
+        address: user.address || '',
+        state: user.state || '',
+        country: user.country || '',
+        zipCode: user.zipCode || '',
         authType: 'google'
       },
       JWT_SECRET,
@@ -101,7 +126,7 @@ export async function GET(request: NextRequest) {
     response.cookies.set('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax', // Changed from 'strict' to 'lax' for better compatibility
+      sameSite: 'lax', 
       maxAge: 60 * 60 * 24, // 24 hours
       path: '/',
     });

@@ -10,19 +10,25 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
+    "@hookform/resolvers": "^5.0.1",
     "@types/mongoose": "^5.11.96",
     "axios": "^1.6.7",
     "bcryptjs": "^2.4.3",
+    "framer-motion": "^12.7.3",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.13.2",
     "next": "14.1.0",
     "nodemailer": "^6.10.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "react-hook-form": "^7.55.0",
     "react-hot-toast": "^2.4.1",
-    "react-icons": "^5.5.0"
+    "react-icons": "^5.5.0",
+    "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@tailwindcss/language-server": "^0.14.15",
+    "@tailwindcss/typography": "^0.5.16",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.5",
     "@types/node": "^20.11.19",
@@ -32,6 +38,8 @@
     "@types/react-icons": "^2.2.7",
     "autoprefixer": "^10.4.17",
     "postcss": "^8.4.35",
+    "postcss-loader": "^8.1.1",
+    "postcss-nesting": "^13.0.1",
     "tailwindcss": "^3.4.1",
     "typescript": "5.8.3"
   }

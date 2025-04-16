@@ -17,14 +17,6 @@
       "contact": "+1888999000"
     },
     {
-      "displayName": "Mubashir",
-      "email": "mubashirullah0@gmail.com",
-      "address": "Chitral Pakistan",
-      "city": "Chitral",
-      "contact": "03439665465",
-      "id": "14"
-    },
-    {
       "id": "16",
       "displayName": "Rachel joe",
       "email": "rachel.chen@example.com",
@@ -55,14 +47,6 @@
       "address": "567 Pine Street",
       "city": "Portland",
       "contact": "+1503888234"
-    },
-    {
-      "id": "21",
-      "displayName": "David Kim",
-      "email": "d.kim@example.com",
-      "address": "123 Highland Park",
-      "city": "Dallas",
-      "contact": "+1214333567"
     },
     {
       "id": "22",
@@ -124,7 +108,7 @@
       "id": "28",
       "displayName": "Ava Martinez",
       "email": "ava.m@example.com",
-      "address": "123 Oak Lane",
+      "address": "123 Oak kane",
       "city": "Chicago",
       "contact": "+14105559876"
     },

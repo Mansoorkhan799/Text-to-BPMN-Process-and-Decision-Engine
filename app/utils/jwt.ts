@@ -43,6 +43,12 @@ export interface JWTPayload {
   userId: string;
   email: string;
   name?: string;
+  role?: string;
+  phoneNumber?: string;
+  address?: string;
+  state?: string;
+  country?: string;
+  zipCode?: string;
 }
 
 export const createToken = (payload: JWTPayload): string => {

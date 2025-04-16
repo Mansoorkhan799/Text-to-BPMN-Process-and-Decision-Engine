@@ -16,6 +16,7 @@ A complete authentication system built with Next.js that includes:
   - Password hashing
   - JWT based authentication
   - Protected routes
+  - Role-based access control (User, Supervisor, Admin roles)
 
 ### Technologies Used
 
@@ -84,9 +85,10 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to see the a
 
 1. **Sign Up**:
    - User enters name, email, and password
+   - User selects a role (User, Supervisor, or Admin)
    - System sends OTP to the user's email
    - User verifies with OTP
-   - Account is created
+   - Account is created with the specified role
 
 2. **Sign In**:
    - User enters email and password
@@ -98,6 +100,28 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to see the a
    - System sends reset link via email
    - User creates new password
    - Password is updated in the database
+
+## Role-Based Permissions
+
+The application implements a role-based access control system with three levels:
+
+1. **User**: Base level access
+   - Access to dashboard and personal profile
+   - Limited functionality
+
+2. **Supervisor**: Mid-level access
+   - All User permissions
+   - Access to reports and analytics
+   - Ability to approve new users
+   - Cannot access admin settings
+
+3. **Admin**: Highest level access
+   - All Supervisor permissions
+   - User management (create, edit, delete)
+   - System configuration and settings
+   - Full application control
+
+The permissions are enforced both on the backend via middleware and on the frontend through conditional rendering.
 
 ## License
 
