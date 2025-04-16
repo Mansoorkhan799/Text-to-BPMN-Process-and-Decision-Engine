@@ -26,14 +26,14 @@ export const AuthLayout: React.FC<AuthLayoutProps> = ({
 
         <div className="relative z-10 max-w-2xl mx-auto flex flex-col items-center justify-center">
           {/* Main Title with Gradient - Now bigger and more prominent */}
-          <div className="mb-8 text-center w-full">
+          <div className="mb-8 w-full self-start">
             <h2
-              className="text-4xl md:text-5xl lg:text-6xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-200 to-blue-300 tracking-normal antialiased pb-2"
+              className="text-4xl md:text-5xl lg:text-6xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white via-blue-200 to-blue-300 tracking-normal antialiased pb-2 text-left"
               style={{ textRendering: 'geometricPrecision', letterSpacing: '0.01em', lineHeight: '1.2' }}
             >
-              Text to BPMN Process Engine
+              Text to BPMN Process and Decision Engine
             </h2>
-            <p className="text-xl text-blue-200 mt-3 font-light">Transform plain text into professional diagrams</p>
+            <p className="text-xl text-blue-200 mt-3 font-light text-left">Transform plain text into professional diagrams</p>
           </div>
 
           {/* Only show title/subtitle if they are provided */}
