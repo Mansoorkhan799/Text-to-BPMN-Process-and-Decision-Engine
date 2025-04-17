@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import SideMenu from './components/SideMenu';
-import Users from './components/Users';
 import UserHeader from './components/UserHeader';
 import Profile from './components/Profile';
 import ProfileFormWrapper from './components/ProfileFormWrapper';
@@ -180,7 +179,17 @@ export default function Home() {
                 </div>
               }
             >
-              <Users />
+              <div className="h-full flex items-center justify-center">
+                <div className="border-4 border-dashed border-gray-200 rounded-lg p-8 text-center">
+                  <h2 className="text-2xl font-semibold text-gray-800 mb-4">User Management</h2>
+                  <p className="text-xl text-gray-600 mb-4">
+                    This feature is coming soon.
+                  </p>
+                  <p className="text-gray-500">
+                    The user management interface will allow administrators to view, add, edit, and manage users.
+                  </p>
+                </div>
+              </div>
             </RoleBasedUi>
           </div>
         )}
