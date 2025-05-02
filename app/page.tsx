@@ -10,6 +10,29 @@ import ProfileFormWrapper from './components/ProfileFormWrapper';
 import toast from 'react-hot-toast';
 import { User } from './types';
 import { RoleBasedUi, ROLES } from './utils/permissions';
+import dynamic from 'next/dynamic';
+
+// Import the BpmnEditor component dynamically to prevent SSR issues with browser APIs
+const BpmnEditor = dynamic(() => import('./components/BpmnEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <span className="ml-2 text-gray-600">Loading BPMN Editor...</span>
+    </div>
+  ),
+});
+
+// Import the BpmnDashboard component
+const BpmnDashboard = dynamic(() => import('./components/BpmnDashboard'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <span className="ml-2 text-gray-600">Loading BPMN Dashboard...</span>
+    </div>
+  ),
+});
 
 export default function Home() {
   const router = useRouter();
@@ -152,13 +175,13 @@ export default function Home() {
 
         {currentView === 'dashboard' && (
           <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8">
-            <div className="h-full flex items-center justify-center">
-              <div className="border-4 border-dashed border-gray-200 rounded-lg p-8">
-                <p className="text-2xl font-semibold text-gray-600">
-                  Welcome! You are successfully logged in.
-                </p>
-              </div>
-            </div>
+            <BpmnDashboard />
+          </main>
+        )}
+
+        {currentView === 'bpmn' && (
+          <main className="flex-1 w-full h-full overflow-hidden">
+            <BpmnEditor />
           </main>
         )}
 
