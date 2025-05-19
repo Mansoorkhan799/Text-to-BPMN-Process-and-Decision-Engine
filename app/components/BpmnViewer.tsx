@@ -127,7 +127,7 @@ const gridStyles = `
 /* Zoom controls */
 .zoom-controls {
   position: absolute;
-  bottom: 20px;
+  bottom: 70px;
   right: 20px;
   display: flex;
   flex-direction: column;
