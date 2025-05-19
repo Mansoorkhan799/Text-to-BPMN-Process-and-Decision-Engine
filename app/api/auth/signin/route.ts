@@ -17,8 +17,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Connect to MongoDB
-    await connectDB();
+    // Connect to MongoDB - keep verbose logging for authentication
+    await connectDB(false); // Explicitly set to not silent
     console.log('MongoDB connected in signin route');
 
     // Find user
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
 
     // Set the token in cookies
     const response = NextResponse.json(
-      { 
+      {
         message: 'Successfully signed in',
         user: {
           id: user._id,

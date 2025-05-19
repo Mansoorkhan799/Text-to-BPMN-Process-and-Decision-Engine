@@ -48,9 +48,6 @@ const SideMenu: React.FC<SideMenuProps> = ({
     // Check for notifications for all users
     fetchNotificationCount();
 
-    // Set up interval to refresh notification count every 30 seconds
-    const interval = setInterval(fetchNotificationCount, 30000);
-
     // Listen for notification changes from other components
     const handleNotificationChange = () => {
       fetchNotificationCount();
@@ -58,9 +55,8 @@ const SideMenu: React.FC<SideMenuProps> = ({
 
     window.addEventListener('notificationsChanged', handleNotificationChange);
 
-    // Clean up interval and event listener on component unmount
+    // Clean up event listener on component unmount
     return () => {
-      clearInterval(interval);
       window.removeEventListener('notificationsChanged', handleNotificationChange);
     };
   }, [userRole]);

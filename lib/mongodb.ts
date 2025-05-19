@@ -9,6 +9,7 @@ if (!MONGODB_URI) {
 interface MongooseCache {
   conn: typeof mongoose | null;
   promise: Promise<typeof mongoose> | null;
+  connectionStartTime?: number;
 }
 
 declare global {
@@ -22,9 +23,24 @@ if (!global.mongoose) {
 
 const cached = global.mongoose;
 
-async function connectDB() {
+// Only log MongoDB connection messages once every 10 minutes
+const shouldLogConnection = () => {
+  const now = Date.now();
+  const tenMinutesMs = 10 * 60 * 1000;
+
+  if (!cached.connectionStartTime || (now - cached.connectionStartTime) > tenMinutesMs) {
+    cached.connectionStartTime = now;
+    return true;
+  }
+  return false;
+};
+
+async function connectDB(silent = false) {
   if (cached.conn) {
-    console.log('✓ Already connected to MongoDB');
+    // Only log "already connected" if it's not a silent check and should log based on time
+    if (!silent && shouldLogConnection()) {
+      console.log('✓ Already connected to MongoDB');
+    }
     return cached.conn;
   }
 
@@ -34,7 +50,9 @@ async function connectDB() {
     };
 
     cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
+      // Always log new connections
       console.log('✓ Connected to MongoDB successfully');
+      cached.connectionStartTime = Date.now();
       return mongoose;
     });
   }
@@ -43,6 +61,7 @@ async function connectDB() {
     cached.conn = await cached.promise;
   } catch (e) {
     cached.promise = null;
+    // Always log errors
     console.error('❌ Failed to connect to MongoDB:', e);
     throw e;
   }
