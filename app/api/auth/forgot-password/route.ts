@@ -58,48 +58,48 @@ export async function POST(request: Request) {
     if (!user) {
       // For security reasons, don't reveal that the user doesn't exist
       // Instead, pretend we sent the email
-      return NextResponse.json({ 
-        message: 'Password reset email sent successfully' 
+      return NextResponse.json({
+        message: 'Password reset email sent successfully'
       });
     }
 
     // Generate a reset token
     const resetToken = crypto.randomBytes(32).toString('hex');
-    
+
     // Hash the token before storing it
     const hashedToken = crypto
       .createHash('sha256')
       .update(resetToken)
       .digest('hex');
-    
+
     // Set token expiration (1 hour from now)
     const tokenExpiration = new Date(Date.now() + 3600000); // 1 hour in milliseconds
-    
+
     // Store the token in the user's record
     user.resetPasswordToken = hashedToken;
     user.resetPasswordExpire = tokenExpiration;
     await user.save();
-    
+
     // Create reset URL with the unhashed token
     const resetUrl = `${request.headers.get('origin')}/reset-password?token=${resetToken}&email=${encodeURIComponent(email)}`;
-    
+
     // Send reset email
     const sent = await sendResetEmail(email, resetUrl);
-    
+
     if (!sent) {
       // If email fails to send, clear the token
       user.resetPasswordToken = undefined;
       user.resetPasswordExpire = undefined;
       await user.save();
-      
+
       return NextResponse.json(
         { error: 'Failed to send reset email' },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ 
-      message: 'Password reset email sent successfully' 
+    return NextResponse.json({
+      message: 'Password reset email sent successfully'
     });
   } catch (error) {
     console.error('Forgot password error:', error);

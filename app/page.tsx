@@ -7,6 +7,7 @@ import Users from './components/Users';
 import UserHeader from './components/UserHeader';
 import Profile from './components/Profile';
 import ProfileFormWrapper from './components/ProfileFormWrapper';
+import Notifications from './components/Notifications';
 import toast from 'react-hot-toast';
 import { User } from './types';
 import { RoleBasedUi, ROLES } from './utils/permissions';
@@ -30,6 +31,28 @@ const BpmnDashboard = dynamic(() => import('./components/BpmnDashboard'), {
     <div className="flex items-center justify-center h-full">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
       <span className="ml-2 text-gray-600">Loading BPMN Dashboard...</span>
+    </div>
+  ),
+});
+
+// Import the LaTeX Editor component
+const LatexEditor = dynamic(() => import('./components/LatexEditor'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <span className="ml-2 text-gray-600">Loading LaTeX Editor...</span>
+    </div>
+  ),
+});
+
+// Import the LaTeX Dashboard component
+const LatexDashboard = dynamic(() => import('./components/LatexDashboard'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+      <span className="ml-2 text-gray-600">Loading LaTeX Dashboard...</span>
     </div>
   ),
 });
@@ -174,14 +197,27 @@ export default function Home() {
         </div>
 
         {currentView === 'dashboard' && (
-          <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8">
-            <BpmnDashboard />
+          <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="h-full">
+                <BpmnDashboard />
+              </div>
+              <div className="h-full">
+                <LatexDashboard />
+              </div>
+            </div>
           </main>
         )}
 
         {currentView === 'bpmn' && (
           <main className="flex-1 w-full h-full overflow-hidden">
             <BpmnEditor />
+          </main>
+        )}
+
+        {currentView === 'latex' && (
+          <main className="flex-1 w-full h-full overflow-hidden">
+            <LatexEditor />
           </main>
         )}
 
@@ -205,6 +241,12 @@ export default function Home() {
             >
               <Users />
             </RoleBasedUi>
+          </div>
+        )}
+
+        {currentView === 'notifications' && (
+          <div className="flex-1 overflow-auto">
+            <Notifications userRole={user?.role || 'user'} />
           </div>
         )}
 

@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import { saveProject, getProjectById, canAccessProject } from '../utils/projectStorage';
 import { XMLParser } from 'fast-xml-parser';
 import * as XLSX from 'xlsx';
+import { useRouter } from 'next/navigation';
 
 // Add custom CSS for grid background
 const gridStyles = `
@@ -100,23 +101,27 @@ interface User {
 }
 
 const BpmnEditor = () => {
+    const router = useRouter();
     const containerRef = useRef<HTMLDivElement>(null);
     const [modeler, setModeler] = useState<any>(null);
-    const [downloading, setDownloading] = useState<boolean>(false);
-    const [exportingFile, setExportingFile] = useState<boolean>(false);
-    const [stylesLoaded, setStylesLoaded] = useState<boolean>(false);
-    const [showViewer, setShowViewer] = useState<boolean>(false);
-    const [currentDiagramXML, setCurrentDiagramXML] = useState<string>(INITIAL_DIAGRAM);
+    const [projectName, setProjectName] = useState('Untitled Diagram');
     const [projectId, setProjectId] = useState<string | null>(null);
-    const [projectName, setProjectName] = useState<string>('Untitled Diagram');
-    const [isRenaming, setIsRenaming] = useState<boolean>(false);
-    const [tempProjectName, setTempProjectName] = useState<string>('');
+    const [isRenaming, setIsRenaming] = useState(false);
+    const [tempProjectName, setTempProjectName] = useState('');
     const projectNameInputRef = useRef<HTMLInputElement>(null);
-    const [loadingProject, setLoadingProject] = useState<boolean>(false);
-    const [showExportDropdown, setShowExportDropdown] = useState<boolean>(false);
-    const [showImportDropdown, setShowImportDropdown] = useState<boolean>(false);
+    const [showExportDropdown, setShowExportDropdown] = useState(false);
+    const [showImportDropdown, setShowImportDropdown] = useState(false);
+    const [showViewer, setShowViewer] = useState(false);
+    const [currentDiagramXML, setCurrentDiagramXML] = useState<string>('');
     const [user, setUser] = useState<User | null>(null);
-    const [importingFile, setImportingFile] = useState<boolean>(false);
+    const [exampleDropdownOpen, setExampleDropdownOpen] = useState(false);
+    const [downloadingExample, setDownloadingExample] = useState<string | null>(null);
+    const [downloading, setDownloading] = useState(false);
+    const [exportingFile, setExportingFile] = useState(false);
+    const [importingFile, setImportingFile] = useState(false);
+    const [sendingForApproval, setSendingForApproval] = useState(false);
+    const [stylesLoaded, setStylesLoaded] = useState<boolean>(false);
+    const [loadingProject, setLoadingProject] = useState<boolean>(false);
 
     // Fetch current user on component mount
     useEffect(() => {
@@ -442,15 +447,59 @@ const BpmnEditor = () => {
 
     // Function to open the viewer
     const handleOpenViewer = async () => {
-        if (!modeler) return;
-
         try {
-            // Get the current diagram XML
             const { xml } = await modeler.saveXML({ format: true });
             setCurrentDiagramXML(xml);
             setShowViewer(true);
         } catch (err) {
-            console.error('Error getting diagram XML:', err);
+            console.error('Error opening viewer:', err);
+            toast.error('Failed to generate diagram for viewing');
+        }
+    };
+
+    // Send BPMN for approval to supervisors
+    const handleSendForApproval = async () => {
+        // Make sure we have a user
+        if (!user) {
+            toast.error('You must be logged in to send for approval');
+            return;
+        }
+
+        try {
+            setSendingForApproval(true);
+
+            // Get the current XML
+            const { xml } = await modeler.saveXML({ format: true });
+
+            // Send to the API endpoint
+            const response = await fetch('/api/notifications/create', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    title: `BPMN Approval: ${projectName}`,
+                    message: `${user.name || user.email} has requested approval for a BPMN diagram: ${projectName}`,
+                    bpmnXml: xml,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to send for approval');
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                toast.success('BPMN sent for approval successfully');
+            } else {
+                throw new Error(data.error || 'Unknown error occurred');
+            }
+        } catch (error) {
+            console.error('Error sending for approval:', error);
+            toast.error('Failed to send BPMN for approval');
+        } finally {
+            setSendingForApproval(false);
         }
     };
 
@@ -2099,6 +2148,33 @@ const BpmnEditor = () => {
                     </svg>
                     <span className="font-medium">View Diagram</span>
                 </button>
+
+                {/* Send for Approval - only show for regular users */}
+                {user && user.role === 'user' && (
+                    <button
+                        onClick={handleSendForApproval}
+                        disabled={sendingForApproval}
+                        className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-green-100 text-green-600 hover:bg-green-200 transition-colors focus:outline-none"
+                        title="Send for Approval"
+                    >
+                        {sendingForApproval ? (
+                            <>
+                                <svg className="animate-spin h-5 w-5 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span className="font-medium">Sending...</span>
+                            </>
+                        ) : (
+                            <>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                </svg>
+                                <span className="font-medium">Send for Approval</span>
+                            </>
+                        )}
+                    </button>
+                )}
             </div>
 
             {/* Main container with editor */}
@@ -2116,6 +2192,7 @@ const BpmnEditor = () => {
                 <BpmnViewerComponent
                     diagramXML={currentDiagramXML}
                     onClose={() => setShowViewer(false)}
+                    title={`BPMN Viewer: ${projectName}`}
                 />
             )}
         </div>

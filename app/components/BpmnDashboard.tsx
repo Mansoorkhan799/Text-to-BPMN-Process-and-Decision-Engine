@@ -124,55 +124,53 @@ const BpmnDashboard = () => {
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-[80vh] w-full">
-            <div className="max-w-lg w-full px-4">
-                {/* Elegant header */}
-                <div className="text-center mb-8">
-                    <h1 className="text-3xl font-semibold text-gray-800 mb-2 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">BPMN Editor</h1>
-                    <p className="text-gray-600">Create, edit and manage your business process diagrams</p>
-                </div>
+        <div className="flex flex-col w-full">
+            {/* Elegant header */}
+            <div className="text-center mb-8">
+                <h1 className="text-3xl font-semibold text-gray-800 mb-2 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">BPMN Editor</h1>
+                <p className="text-gray-600">Create, edit and manage your business process diagrams</p>
+            </div>
 
-                {/* Dotted rectangle container */}
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8">
-                    <div className="space-y-4">
-                        {/* New BPMN Diagram */}
-                        <div
-                            onClick={handleCreateNew}
-                            className="bg-blue-50 rounded-lg p-4 hover:bg-blue-100 cursor-pointer transition-colors"
-                        >
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0 mr-4">
-                                    <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
-                                            <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
-                                </div>
-                                <div>
-                                    <h2 className="text-xl font-medium text-gray-800">New BPMN Diagram</h2>
-                                    <p className="text-gray-600 text-sm">Start from scratch with a new diagram</p>
+            {/* Dotted rectangle container */}
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 h-full">
+                <div className="space-y-4">
+                    {/* New BPMN Diagram */}
+                    <div
+                        onClick={handleCreateNew}
+                        className="bg-blue-50 rounded-lg p-4 hover:bg-blue-100 cursor-pointer transition-colors transform hover:scale-[1.02] duration-200 hover:shadow-md"
+                    >
+                        <div className="flex items-center">
+                            <div className="flex-shrink-0 mr-4">
+                                <div className="h-16 w-16 bg-blue-100 rounded-full flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+                                    </svg>
                                 </div>
                             </div>
+                            <div>
+                                <h2 className="text-xl font-medium text-gray-800">New BPMN Diagram</h2>
+                                <p className="text-gray-600 text-sm">Start from scratch with a new diagram</p>
+                            </div>
                         </div>
+                    </div>
 
-                        {/* Open Saved Project */}
-                        <div
-                            onClick={() => setShowModal(true)}
-                            className="bg-green-50 rounded-lg p-4 hover:bg-green-100 cursor-pointer transition-colors"
-                        >
-                            <div className="flex items-center">
-                                <div className="flex-shrink-0 mr-4">
-                                    <div className="h-16 w-16 bg-green-100 rounded-full flex items-center justify-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-600" viewBox="0 0 20 20" fill="currentColor">
-                                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
-                                        </svg>
-                                    </div>
+                    {/* Open Saved Project */}
+                    <div
+                        onClick={() => setShowModal(true)}
+                        className="bg-green-50 rounded-lg p-4 hover:bg-green-100 cursor-pointer transition-colors transform hover:scale-[1.02] duration-200 hover:shadow-md"
+                    >
+                        <div className="flex items-center">
+                            <div className="flex-shrink-0 mr-4">
+                                <div className="h-16 w-16 bg-green-100 rounded-full flex items-center justify-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-green-600" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                                        <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clipRule="evenodd" />
+                                    </svg>
                                 </div>
-                                <div>
-                                    <h2 className="text-xl font-medium text-gray-800">Open Saved Project</h2>
-                                    <p className="text-gray-600 text-sm">Access your previously saved diagrams</p>
-                                </div>
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-medium text-gray-800">Open Saved Project</h2>
+                                <p className="text-gray-600 text-sm">Access your previously saved diagrams</p>
                             </div>
                         </div>
                     </div>

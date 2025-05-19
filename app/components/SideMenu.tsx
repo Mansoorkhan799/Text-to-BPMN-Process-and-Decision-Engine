@@ -2,8 +2,10 @@
 
 import { useRouter } from 'next/navigation';
 import { IconType } from 'react-icons';
-import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp } from 'react-icons/hi';
-import { useState } from 'react';
+import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp, HiBell } from 'react-icons/hi';
+import { SiLatex } from 'react-icons/si';
+import { FaCode } from 'react-icons/fa';
+import { useState, useEffect } from 'react';
 import { ROLES } from '../utils/permissions';
 
 interface SideMenuProps {
@@ -13,6 +15,13 @@ interface SideMenuProps {
   userRole?: string;
   userName?: string;
   userEmail?: string;
+}
+
+interface NotificationCounts {
+  pending: number;
+  approved: number;
+  rejected: number;
+  total: number;
 }
 
 const SideMenu: React.FC<SideMenuProps> = ({
@@ -26,6 +35,51 @@ const SideMenu: React.FC<SideMenuProps> = ({
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [pendingNotifications, setPendingNotifications] = useState(0);
+  const [notificationCounts, setNotificationCounts] = useState<NotificationCounts>({
+    pending: 0,
+    approved: 0,
+    rejected: 0,
+    total: 0
+  });
+
+  // Check for pending notifications
+  useEffect(() => {
+    // Check for notifications for all users
+    fetchNotificationCount();
+
+    // Set up interval to refresh notification count every 30 seconds
+    const interval = setInterval(fetchNotificationCount, 30000);
+
+    // Listen for notification changes from other components
+    const handleNotificationChange = () => {
+      fetchNotificationCount();
+    };
+
+    window.addEventListener('notificationsChanged', handleNotificationChange);
+
+    // Clean up interval and event listener on component unmount
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('notificationsChanged', handleNotificationChange);
+    };
+  }, [userRole]);
+
+  const fetchNotificationCount = async () => {
+    try {
+      const response = await fetch('/api/notifications/count');
+      if (response.ok) {
+        const data = await response.json();
+        setPendingNotifications(data.count);
+        // Check if the new counts structure is available
+        if (data.counts) {
+          setNotificationCounts(data.counts);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch notification count:', error);
+    }
+  };
 
   // Function to check if user has access to a view
   const hasAccess = (requiredRole: string) => {
@@ -58,6 +112,49 @@ const SideMenu: React.FC<SideMenuProps> = ({
       onClick: () => onNavigate('bpmn'),
       view: 'bpmn',
       requiredRole: ROLES.USER // Everyone can access
+    },
+    {
+      label: 'LaTeX Editor',
+      icon: <FaCode className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+      onClick: () => onNavigate('latex'),
+      view: 'latex',
+      requiredRole: ROLES.USER // Everyone can access
+    },
+    {
+      label: 'Notifications',
+      icon: (
+        <div className="relative">
+          <HiBell className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />
+          {notificationCounts.total > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
+              {notificationCounts.total > 9 ? '9+' : notificationCounts.total}
+            </span>
+          )}
+        </div>
+      ),
+      onClick: () => onNavigate('notifications'),
+      view: 'notifications',
+      requiredRole: ROLES.USER, // Make accessible to all users
+      badge: notificationCounts.total > 0 ?
+        (isCollapsed ? null : (
+          <div className="flex gap-1 ml-auto">
+            {notificationCounts.pending > 0 && (
+              <span className="bg-yellow-100 text-yellow-800 text-xs rounded px-1 py-0.5">
+                {notificationCounts.pending}
+              </span>
+            )}
+            {notificationCounts.approved > 0 && (
+              <span className="bg-green-100 text-green-800 text-xs rounded px-1 py-0.5">
+                {notificationCounts.approved}
+              </span>
+            )}
+            {notificationCounts.rejected > 0 && (
+              <span className="bg-red-100 text-red-800 text-xs rounded px-1 py-0.5">
+                {notificationCounts.rejected}
+              </span>
+            )}
+          </div>
+        )) : null
     },
     {
       label: 'Users',
@@ -128,7 +225,12 @@ const SideMenu: React.FC<SideMenuProps> = ({
                 }`}
             >
               {item.icon}
-              {!isCollapsed && <span className="font-medium">{item.label}</span>}
+              {!isCollapsed && (
+                <>
+                  <span className="font-medium">{item.label}</span>
+                  {item.badge}
+                </>
+              )}
             </button>
           ))}
       </div>

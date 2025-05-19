@@ -53,19 +53,19 @@ export const generateOTP = () => {
 export const storeOTP = (email: string, otp: string) => {
   try {
     console.log('Storing OTP for email:', email, 'OTP:', otp); // Debug log
-    
+
     // Read current store
     const store = readOTPStore();
-    
+
     // Store new OTP
     store[email] = {
       otp,
       timestamp: Date.now(),
     };
-    
+
     // Write updated store
     writeOTPStore(store);
-    
+
     console.log('OTP stored successfully. Current store:', store); // Debug log
     return true;
   } catch (error) {
@@ -78,11 +78,11 @@ export const storeOTP = (email: string, otp: string) => {
 export const verifyOTP = (email: string, otp: string): boolean => {
   try {
     console.log('Verifying OTP for email:', email, 'Input OTP:', otp); // Debug log
-    
+
     // Read current store
     const store = readOTPStore();
     console.log('Current OTP store:', store); // Debug log
-    
+
     const stored = store[email];
     console.log('Stored OTP data:', stored); // Debug log
 
@@ -138,6 +138,87 @@ export const sendOTPEmail = async (email: string, otp: string) => {
     return true;
   } catch (error) {
     console.error('Error sending email:', error);
+    return false;
+  }
+};
+
+// Send notification email for BPMN approval
+export const sendNotificationEmail = async (
+  to: string,
+  title: string,
+  message: string,
+  senderName: string,
+  appUrl: string
+) => {
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: to,
+    subject: `BPMN Approval Request: ${title}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">BPMN Approval Request</h2>
+        <h3 style="color: #4F46E5;">${title}</h3>
+        <p><strong>From:</strong> ${senderName}</p>
+        <p>${message}</p>
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${appUrl}/signin?redirect=notifications" 
+             style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">
+            Review BPMN
+          </a>
+        </div>
+        <p style="color: #666; font-size: 12px;">If the button above doesn't work, copy and paste this URL into your browser: ${appUrl}/signin?redirect=notifications</p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending notification email:', error);
+    return false;
+  }
+};
+
+// Send notification email for BPMN status update (approved/rejected)
+export const sendStatusUpdateEmail = async (
+  to: string,
+  status: 'approved' | 'rejected',
+  title: string,
+  feedback: string,
+  reviewerName: string,
+  appUrl: string
+) => {
+  const statusColor = status === 'approved' ? '#22C55E' : '#EF4444';
+  const statusText = status.charAt(0).toUpperCase() + status.slice(1);
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: to,
+    subject: `BPMN ${statusText}: ${title}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">BPMN ${statusText}</h2>
+        <h3 style="color: ${statusColor};">${title}</h3>
+        <p><strong>Status:</strong> <span style="color: ${statusColor}; font-weight: bold;">${statusText}</span></p>
+        <p><strong>Reviewed by:</strong> ${reviewerName}</p>
+        ${feedback ? `<p><strong>Feedback:</strong> ${feedback}</p>` : ''}
+        <div style="margin: 30px 0; text-align: center;">
+          <a href="${appUrl}/signin?redirect=notifications" 
+             style="background-color: #4F46E5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block; font-weight: bold;">
+            View Details
+          </a>
+        </div>
+        <p style="color: #666; font-size: 12px;">If the button above doesn't work, copy and paste this URL into your browser: ${appUrl}/signin?redirect=notifications</p>
+      </div>
+    `,
+  };
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.error('Error sending status update email:', error);
     return false;
   }
 }; 

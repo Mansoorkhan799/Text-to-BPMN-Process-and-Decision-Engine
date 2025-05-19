@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import BpmnViewer from 'bpmn-js/lib/Viewer';
+// Directly import CSS for smoother loading
+import 'bpmn-js/dist/assets/diagram-js.css';
+import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css';
 
 // Add custom CSS for grid background
 const gridStyles = `
@@ -13,6 +16,8 @@ const gridStyles = `
   background-size: 20px 20px;
   background-position: -0.5px -0.5px;
   border: 1px solid #e0e0e0;
+  width: 100%;
+  height: 100%;
 }
 
 .bpmn-viewer-container::before {
@@ -62,6 +67,63 @@ const gridStyles = `
   display: none !important;
 }
 
+/* Modal styles */
+.bpmn-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+}
+
+.bpmn-modal-content {
+  background-color: white;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  width: 90%;
+  max-width: 1200px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.bpmn-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.bpmn-modal-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.bpmn-modal-body {
+  flex: 1;
+  overflow: hidden;
+  min-height: 500px;
+  position: relative;
+}
+
+.bpmn-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-top: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+}
+
 /* Zoom controls */
 .zoom-controls {
   position: absolute;
@@ -100,14 +162,45 @@ const gridStyles = `
 interface BpmnViewerProps {
     diagramXML: string;
     onClose: () => void;
+    title?: string;
 }
 
-const BpmnViewerComponent: React.FC<BpmnViewerProps> = ({ diagramXML, onClose }) => {
+const BpmnViewerComponent: React.FC<BpmnViewerProps> = ({
+    diagramXML,
+    onClose,
+    title = "BPMN Diagram Viewer"
+}) => {
     const containerRef = useRef<HTMLDivElement>(null);
-    const [stylesLoaded, setStylesLoaded] = useState<boolean>(false);
     const [viewer, setViewer] = useState<any>(null);
     const [currentZoom, setCurrentZoom] = useState<number>(1);
     const [isLoading, setIsLoading] = useState<boolean>(true);
+
+    // Handle escape key to close modal
+    useEffect(() => {
+        const handleEscKey = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                onClose();
+            }
+        };
+
+        window.addEventListener('keydown', handleEscKey);
+        return () => {
+            window.removeEventListener('keydown', handleEscKey);
+        };
+    }, [onClose]);
+
+    // Prevent body scrolling when modal is open
+    useEffect(() => {
+        // Save the current overflow setting
+        const originalStyle = window.getComputedStyle(document.body).overflow;
+        // Disable scrolling on body
+        document.body.style.overflow = 'hidden';
+
+        // Re-enable scrolling when component unmounts
+        return () => {
+            document.body.style.overflow = originalStyle;
+        };
+    }, []);
 
     // Apply custom grid styles
     useEffect(() => {
@@ -122,25 +215,9 @@ const BpmnViewerComponent: React.FC<BpmnViewerProps> = ({ diagramXML, onClose })
         };
     }, []);
 
-    // Load CSS
-    useEffect(() => {
-        const loadStyles = async () => {
-            try {
-                // Import CSS files
-                await import('bpmn-js/dist/assets/diagram-js.css');
-                await import('bpmn-js/dist/assets/bpmn-font/css/bpmn.css');
-                setStylesLoaded(true);
-            } catch (err) {
-                console.error('Error loading styles:', err);
-            }
-        };
-
-        loadStyles();
-    }, []);
-
     // Initialize viewer
     useEffect(() => {
-        if (!containerRef.current || !stylesLoaded || !diagramXML) return;
+        if (!containerRef.current || !diagramXML) return;
 
         setIsLoading(true);
 
@@ -167,7 +244,7 @@ const BpmnViewerComponent: React.FC<BpmnViewerProps> = ({ diagramXML, onClose })
         return () => {
             bpmnViewer.destroy();
         };
-    }, [stylesLoaded, diagramXML]);
+    }, [diagramXML]);
 
     // Function to fit the diagram optimally
     const fitDiagram = (viewerInstance: any) => {
@@ -225,37 +302,23 @@ const BpmnViewerComponent: React.FC<BpmnViewerProps> = ({ diagramXML, onClose })
         fitDiagram(viewer);
     };
 
-    if (!stylesLoaded) {
-        return (
-            <div className="fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50">
-                <div className="flex flex-col items-center">
-                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent mb-3"></div>
-                    <span className="text-gray-700 font-medium">Loading viewer...</span>
-                </div>
-            </div>
-        );
-    }
-
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4 md:p-6">
-            <div className="bg-white rounded-lg shadow-2xl w-full max-w-6xl flex flex-col max-h-[90vh]">
-                {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b">
-                    <h2 className="text-xl font-semibold text-gray-800">BPMN Diagram Viewer</h2>
+        <div className="bpmn-modal-overlay" onClick={onClose}>
+            <div className="bpmn-modal-content" onClick={(e) => e.stopPropagation()}>
+                <div className="bpmn-modal-header">
+                    <h2 className="bpmn-modal-title">{title}</h2>
                     <button
                         onClick={onClose}
-                        className="p-1 rounded-full hover:bg-gray-200 transition-colors focus:outline-none"
-                        aria-label="Close"
+                        className="text-gray-500 hover:text-gray-700 focus:outline-none"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                     </button>
                 </div>
 
-                {/* Content area with diagram */}
-                <div className="flex-1 overflow-hidden relative p-0">
-                    <div className="w-full h-[calc(100vh-190px)] min-h-[500px] bpmn-viewer-container relative overflow-hidden">
+                <div className="bpmn-modal-body">
+                    <div className="bpmn-viewer-container relative">
                         {isLoading && (
                             <div className="absolute inset-0 bg-white bg-opacity-70 flex items-center justify-center z-20">
                                 <div className="flex flex-col items-center">
@@ -264,9 +327,11 @@ const BpmnViewerComponent: React.FC<BpmnViewerProps> = ({ diagramXML, onClose })
                                 </div>
                             </div>
                         )}
+
                         <div
                             ref={containerRef}
                             className="w-full h-full"
+                            style={{ height: '600px' }}  // Explicitly set height
                         />
 
                         {/* Zoom controls */}
@@ -290,14 +355,14 @@ const BpmnViewerComponent: React.FC<BpmnViewerProps> = ({ diagramXML, onClose })
                     </div>
                 </div>
 
-                {/* Footer */}
-                <div className="bg-gray-100 px-6 py-4 rounded-b-lg flex justify-between items-center">
+                <div className="bpmn-modal-footer">
                     <div className="text-sm text-gray-500">
                         {currentZoom && `Zoom: ${Math.round(currentZoom * 100)}%`}
                     </div>
+
                     <button
                         onClick={onClose}
-                        className="px-6 py-2 bg-gray-200 hover:bg-gray-300 rounded-md text-gray-700 font-medium transition-colors focus:outline-none"
+                        className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded font-medium transition-colors"
                     >
                         Close
                     </button>

@@ -26,9 +26,19 @@ export default function SignIn() {
   const [formErrors, setFormErrors] = useState<FormErrors>({});
   const [isLoading, setIsLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [redirectPath, setRedirectPath] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
+
+    // Check for redirect in URL
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const redirect = urlParams.get('redirect');
+      if (redirect) {
+        setRedirectPath(redirect);
+      }
+    }
   }, []);
 
   // Clear specific field error when user types
@@ -82,8 +92,13 @@ export default function SignIn() {
       if (response.ok) {
         // Set the first login flag in sessionStorage
         sessionStorage.setItem('isFirstLogin', 'true');
-        // Also set currentView to dashboard to ensure consistency
-        sessionStorage.setItem('currentView', 'dashboard');
+
+        // Set the view based on redirect path or default to dashboard
+        if (redirectPath) {
+          sessionStorage.setItem('currentView', redirectPath);
+        } else {
+          sessionStorage.setItem('currentView', 'dashboard');
+        }
 
         toast.success('Login successful!');
         router.push('/');

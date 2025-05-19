@@ -5,6 +5,9 @@ import { Toaster } from 'react-hot-toast';
 export const metadata: Metadata = {
   title: 'Text To BPMN Process & Decision Engine',
   description: '3 Modules with Next.js',
+  icons: {
+    icon: '/favicon.svg'
+  }
 };
 
 export default function RootLayout({
@@ -14,9 +17,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
+      <head>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+      </head>
       <body suppressHydrationWarning={true} className="font-sans">
         {children}
-        <Toaster 
+        <Toaster
           position="top-center"
           toastOptions={{
             duration: 3000,
