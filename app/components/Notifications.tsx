@@ -514,7 +514,7 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                     <span className="ml-3 text-gray-600 font-medium">Loading notifications...</span>
                 </div>
             ) : getFilteredNotifications().length === 0 ? (
-                <div className="bg-white rounded-lg shadow-sm p-10 text-center">
+                <div className="bg-white rounded-lg p-10 text-center border-2 border-dashed border-gray-300">
                     <div className="bg-blue-50 rounded-full p-3 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
                         <svg
                             className="h-8 w-8 text-blue-500"
