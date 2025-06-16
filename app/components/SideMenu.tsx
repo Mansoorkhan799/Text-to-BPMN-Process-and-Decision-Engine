@@ -17,6 +17,16 @@ interface SideMenuProps {
   userEmail?: string;
 }
 
+interface MenuItem {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  view: string;
+  requiredRole: string;
+  shouldShow?: boolean;
+  badge?: React.ReactNode;
+}
+
 interface NotificationCounts {
   pending: number;
   approved: number;
@@ -48,9 +58,6 @@ const SideMenu: React.FC<SideMenuProps> = ({
     // Check for notifications for all users
     fetchNotificationCount();
 
-    // Set up interval to refresh notification count every 30 seconds
-    const interval = setInterval(fetchNotificationCount, 30000);
-
     // Listen for notification changes from other components
     const handleNotificationChange = () => {
       fetchNotificationCount();
@@ -58,9 +65,8 @@ const SideMenu: React.FC<SideMenuProps> = ({
 
     window.addEventListener('notificationsChanged', handleNotificationChange);
 
-    // Clean up interval and event listener on component unmount
+    // Clean up event listener on component unmount
     return () => {
-      clearInterval(interval);
       window.removeEventListener('notificationsChanged', handleNotificationChange);
     };
   }, [userRole]);
@@ -95,7 +101,7 @@ const SideMenu: React.FC<SideMenuProps> = ({
     return userRoleLevel >= requiredRoleLevel;
   };
 
-  const menuItems = [
+  const menuItems: MenuItem[] = [
     {
       label: 'Dashboard',
       icon: <HiOutlineViewGrid className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
@@ -134,7 +140,8 @@ const SideMenu: React.FC<SideMenuProps> = ({
       ),
       onClick: () => onNavigate('notifications'),
       view: 'notifications',
-      requiredRole: ROLES.USER, // Make accessible to all users
+      requiredRole: ROLES.USER,
+      shouldShow: userRole !== ROLES.ADMIN, // Hide for admin users
       badge: notificationCounts.total > 0 ?
         (isCollapsed ? null : (
           <div className="flex gap-1 ml-auto">
@@ -213,7 +220,7 @@ const SideMenu: React.FC<SideMenuProps> = ({
     >
       <div className="flex flex-col flex-grow p-4 space-y-2">
         {menuItems
-          .filter(item => hasAccess(item.requiredRole))
+          .filter(item => hasAccess(item.requiredRole) && (item.shouldShow !== false))
           .map((item, index) => (
             <button
               key={index}
@@ -273,4 +280,4 @@ const SideMenu: React.FC<SideMenuProps> = ({
   );
 };
 
-export default SideMenu; 
+export default SideMenu;

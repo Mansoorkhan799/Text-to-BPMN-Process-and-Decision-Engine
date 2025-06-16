@@ -73,12 +73,6 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
         fetchNotifications();
         fetchNotificationCounts();
 
-        // Set up periodic refresh every 30 seconds
-        const refreshInterval = setInterval(() => {
-            fetchNotifications();
-            fetchNotificationCounts();
-        }, 30000);
-
         // Fetch when window becomes visible again (user returns to tab)
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
@@ -89,8 +83,8 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
 
         // Listen for custom notification change events
         const handleNotificationChange = () => {
-            fetchNotifications();
-            fetchNotificationCounts();
+            // Remove fetching here to prevent double refresh
+            // The global event should only be used for other components like the sidebar badge
         };
 
         document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -98,7 +92,6 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
 
         // Clean up
         return () => {
-            clearInterval(refreshInterval);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('notificationsChanged', handleNotificationChange);
         };
@@ -147,10 +140,12 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
             // Set the processing state for this notification
             setProcessingState({ id: notificationId, action: decision });
 
-            // Optional: prompt for feedback for rejected items
+            // Prompt for feedback for both approved and rejected items
             let feedback = '';
             if (decision === 'rejected') {
                 feedback = prompt('Please provide feedback for rejection (optional):') || '';
+            } else if (decision === 'approved') {
+                feedback = prompt('Please provide feedback for approval (optional):') || '';
             }
 
             // Call the API to process the notification
@@ -203,7 +198,8 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
     const refreshNotificationState = async () => {
         await fetchNotifications();
         await fetchNotificationCounts();
-        notifyNotificationChange(); // Trigger global event to update sidebar badge
+        // Always notify other components (like the sidebar badge) about the change
+        notifyNotificationChange();
     };
 
     const handleDeleteNotification = async (notificationId: string) => {
@@ -226,11 +222,6 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
             if (!response.ok) {
                 throw new Error('Failed to delete notification');
             }
-
-            // Remove the notification from state
-            setNotifications(prevNotifications =>
-                prevNotifications.filter(notification => notification.id !== notificationId)
-            );
 
             toast.success('Notification deleted successfully');
 
@@ -305,16 +296,27 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
         const isApprovalRequest = notification.type === 'approval_request';
         const isPending = displayStatus === 'pending';
 
+        const statusColors = {
+            pending: { bg: 'bg-amber-50', border: 'border-amber-400', text: 'text-amber-800', badge: 'bg-amber-100' },
+            approved: { bg: 'bg-emerald-50', border: 'border-emerald-400', text: 'text-emerald-800', badge: 'bg-emerald-100' },
+            rejected: { bg: 'bg-rose-50', border: 'border-rose-400', text: 'text-rose-800', badge: 'bg-rose-100' }
+        };
+
+        const currentColor = statusColors[displayStatus] || statusColors.pending;
+
         return (
             <div
                 key={notification.id}
-                className={`bg-white rounded-lg shadow-md p-4 mb-4 border-l-4 ${displayStatus === 'pending' ? 'border-yellow-400' :
-                    displayStatus === 'approved' ? 'border-green-500' : 'border-red-500'
-                    }`}
+                className={`${currentColor.bg} rounded-lg shadow-sm p-5 mb-4 border ${currentColor.border} transition-all duration-300 hover:shadow-md`}
             >
                 <div className="flex justify-between items-start">
-                    <div>
-                        <h3 className="font-semibold text-lg">{notification.title}</h3>
+                    <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            <h3 className="font-semibold text-lg">{notification.title}</h3>
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${currentColor.badge} ${currentColor.text}`}>
+                                {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+                            </span>
+                        </div>
                         <p className="text-gray-600 text-sm mb-2">
                             {notification.type === 'status_update'
                                 ? `From: ${notification.senderName} (${notification.senderEmail})`
@@ -322,29 +324,25 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                             }
                         </p>
                         <p className="text-gray-700 mb-3">{notification.message}</p>
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-gray-500 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
                             {new Date(notification.createdAt).toLocaleString()}
                         </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                        <div className={`px-2 py-1 rounded text-xs font-medium ${displayStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            displayStatus === 'approved' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                            }`}>
-                            {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
-                        </div>
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteNotification(notification.id);
-                            }}
-                            className="text-gray-500 hover:text-red-600"
-                            title="Delete notification"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        </button>
-                    </div>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteNotification(notification.id);
+                        }}
+                        className="text-gray-400 hover:text-red-600 transition-colors p-1 rounded-full hover:bg-red-50"
+                        title="Delete notification"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                    </button>
                 </div>
 
                 <div className="mt-4 flex gap-2">
@@ -352,9 +350,15 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                     {notification.bpmnXml && (
                         <button
                             onClick={() => handleViewBpmn(notification)}
-                            className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm"
+                            className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm transition-colors shadow-sm hover:shadow"
                         >
-                            View BPMN
+                            <span className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                View BPMN
+                            </span>
                         </button>
                     )}
 
@@ -364,35 +368,45 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                             <button
                                 onClick={() => handleApproveReject(notification.id, 'approved')}
                                 disabled={processingState !== null}
-                                className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 text-sm flex items-center"
+                                className="px-4 py-2 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 text-sm flex items-center transition-colors shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {processingState?.id === notification.id && processingState.action === 'approved' ? (
                                     <>
-                                        <svg className="animate-spin h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <svg className="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
                                         Processing...
                                     </>
                                 ) : (
-                                    'Approve'
+                                    <span className="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        Approve
+                                    </span>
                                 )}
                             </button>
                             <button
                                 onClick={() => handleApproveReject(notification.id, 'rejected')}
                                 disabled={processingState !== null}
-                                className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 text-sm flex items-center"
+                                className="px-4 py-2 bg-rose-500 text-white rounded-md hover:bg-rose-600 text-sm flex items-center transition-colors shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 {processingState?.id === notification.id && processingState.action === 'rejected' ? (
                                     <>
-                                        <svg className="animate-spin h-4 w-4 mr-1" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <svg className="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
                                         Processing...
                                     </>
                                 ) : (
-                                    'Reject'
+                                    <span className="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                        </svg>
+                                        Reject
+                                    </span>
                                 )}
                             </button>
                         </>
@@ -403,15 +417,30 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
     };
 
     return (
-        <div className="container mx-auto py-6 px-4">
-            <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold">Notifications & Alerts</h1>
-                <div className="flex gap-2">
+        <div className="container mx-auto py-6 px-4 max-w-5xl">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                <div className="relative pb-2">
+                    <div className="flex items-center gap-2">
+                        <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-md">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                            </svg>
+                        </div>
+                        <h1 className="text-2xl md:text-3xl font-bold">
+                            <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 animate-gradient-x">
+                                Notifications & Alerts
+                            </span>
+                        </h1>
+                    </div>
+                    <div className="absolute -bottom-1 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-600 rounded-full opacity-70"></div>
+                    <div className="absolute -bottom-1 left-0 w-1/3 h-1.5 bg-white/30 rounded-full animate-pulse"></div>
+                </div>
+                <div className="flex flex-wrap gap-2 bg-gradient-to-br from-blue-50 to-indigo-50/70 p-2 rounded-lg shadow-sm w-full md:w-auto border border-blue-100/50">
                     <button
                         onClick={() => setCurrentTab('pending')}
-                        className={`px-4 py-2 rounded-md flex items-center ${currentTab === 'pending'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        className={`px-4 py-2 rounded-md flex items-center text-sm transition-all ${currentTab === 'pending'
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
+                            : 'bg-white text-gray-700 hover:bg-gray-100/80'
                             }`}
                     >
                         <span>Pending</span>
@@ -423,9 +452,9 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                     </button>
                     <button
                         onClick={() => setCurrentTab('approved')}
-                        className={`px-4 py-2 rounded-md flex items-center ${currentTab === 'approved'
-                            ? 'bg-green-500 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        className={`px-4 py-2 rounded-md flex items-center text-sm transition-all ${currentTab === 'approved'
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
+                            : 'bg-white text-gray-700 hover:bg-gray-100/80'
                             }`}
                     >
                         <span>Approved</span>
@@ -437,9 +466,9 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                     </button>
                     <button
                         onClick={() => setCurrentTab('rejected')}
-                        className={`px-4 py-2 rounded-md flex items-center ${currentTab === 'rejected'
-                            ? 'bg-red-500 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        className={`px-4 py-2 rounded-md flex items-center text-sm transition-all ${currentTab === 'rejected'
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
+                            : 'bg-white text-gray-700 hover:bg-gray-100/80'
                             }`}
                     >
                         <span>Rejected</span>
@@ -451,9 +480,9 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                     </button>
                     <button
                         onClick={() => setCurrentTab('all')}
-                        className={`px-4 py-2 rounded-md flex items-center ${currentTab === 'all'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        className={`px-4 py-2 rounded-md flex items-center text-sm transition-all ${currentTab === 'all'
+                            ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-md'
+                            : 'bg-white text-gray-700 hover:bg-gray-100/80'
                             }`}
                     >
                         <span>All</span>
@@ -468,9 +497,10 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                             fetchNotifications();
                             fetchNotificationCounts();
                         }}
-                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 flex items-center"
+                        className="px-4 py-2 bg-white text-gray-700 rounded-md hover:bg-gray-100 text-sm flex items-center transition-all"
+                        title="Refresh notifications"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                         </svg>
                         Refresh
@@ -479,27 +509,29 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
             </div>
 
             {isLoading ? (
-                <div className="flex justify-center items-center h-64">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                    <span className="ml-2 text-gray-600">Loading notifications...</span>
+                <div className="flex justify-center items-center h-64 bg-white rounded-lg shadow-sm">
+                    <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-100 border-t-blue-500"></div>
+                    <span className="ml-3 text-gray-600 font-medium">Loading notifications...</span>
                 </div>
             ) : getFilteredNotifications().length === 0 ? (
-                <div className="bg-white rounded-lg shadow p-8 text-center">
-                    <svg
-                        className="mx-auto h-12 w-12 text-gray-400"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                    >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1.5}
-                            d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                        />
-                    </svg>
-                    <h3 className="mt-2 text-lg font-medium text-gray-900">No notifications</h3>
-                    <p className="mt-1 text-gray-500">
+                <div className="bg-white rounded-lg shadow-sm p-10 text-center">
+                    <div className="bg-blue-50 rounded-full p-3 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                        <svg
+                            className="h-8 w-8 text-blue-500"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                        >
+                            <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={1.5}
+                                d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
+                            />
+                        </svg>
+                    </div>
+                    <h3 className="text-xl font-medium text-gray-900 mb-1">No notifications</h3>
+                    <p className="text-gray-500 max-w-md mx-auto">
                         {currentTab === 'pending'
                             ? 'You have no pending notifications at the moment.'
                             : currentTab === 'approved'
@@ -510,12 +542,12 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                     </p>
                 </div>
             ) : (
-                <div>
+                <div className="space-y-4">
                     {getFilteredNotifications().map(renderNotificationItem)}
                 </div>
             )}
 
-            {/* Modified BPMN Viewer - Remove the redundant modal wrapper */}
+            {/* BPMN Viewer */}
             {showBpmnViewer && selectedNotification && selectedNotification.bpmnXml && (
                 <BpmnViewer
                     diagramXML={selectedNotification.bpmnXml}
@@ -524,6 +556,9 @@ const Notifications = ({ userRole = 'user' }: NotificationsProps) => {
                         setSelectedNotification(null);
                     }}
                     title={selectedNotification.title}
+                    userId={selectedNotification.recipientEmail}
+                    userRole={userRole}
+                    isApprovalView={true}
                 />
             )}
         </div>

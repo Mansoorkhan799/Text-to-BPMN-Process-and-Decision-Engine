@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Connect to MongoDB
-    await connectDB();
+    // Connect to MongoDB - keep verbose logging for authentication
+    await connectDB(false); // Explicitly set to not silent
     console.log('MongoDB connected in verify-otp route');
 
     // Check if user already exists
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
     // Create the response
     const response = NextResponse.json(
-      { 
+      {
         message: 'OTP verified successfully',
         user: {
           id: user._id,

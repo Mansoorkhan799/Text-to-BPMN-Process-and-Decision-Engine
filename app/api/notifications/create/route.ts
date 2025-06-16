@@ -56,12 +56,12 @@ export async function POST(request: NextRequest) {
 
         // Find all supervisors and admins to notify
         const supervisors = await mongoDb.collection('users').find({
-            role: { $in: ['supervisor', 'admin'] }
+            role: 'supervisor'
         }).toArray();
 
         if (supervisors.length === 0) {
             return NextResponse.json(
-                { error: 'No supervisors or admins found to send approval request' },
+                { error: 'No supervisors found to send approval request' },
                 { status: 404 }
             );
         }

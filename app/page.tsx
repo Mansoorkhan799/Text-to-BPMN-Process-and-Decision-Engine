@@ -130,6 +130,12 @@ export default function Home() {
       return;
     }
 
+    // Redirect admin users trying to access notifications
+    if (view === 'notifications' && user?.role === 'admin') {
+      toast.error('Notifications are only available for users and supervisors');
+      // We still allow the view to be set so the message is shown
+    }
+
     setCurrentView(view);
 
     // Reset editing mode when switching views
@@ -244,9 +250,22 @@ export default function Home() {
           </div>
         )}
 
-        {currentView === 'notifications' && (
+        {currentView === 'notifications' && user?.role !== 'admin' && (
           <div className="flex-1 overflow-auto">
             <Notifications userRole={user?.role || 'user'} />
+          </div>
+        )}
+
+        {currentView === 'notifications' && user?.role === 'admin' && (
+          <div className="h-full flex items-center justify-center">
+            <div className="border-4 border-dashed border-gray-200 rounded-lg p-8 max-w-md text-center">
+              <p className="text-xl font-semibold text-gray-700 mb-2">
+                Notifications Not Available
+              </p>
+              <p className="text-gray-600">
+                Notifications are only available for users and supervisors.
+              </p>
+            </div>
           </div>
         )}
 

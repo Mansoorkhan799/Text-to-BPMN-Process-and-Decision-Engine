@@ -30,6 +30,7 @@
     "camunda-bpmn-moddle": "^7.0.1",
     "clsx": "^2.1.1",
     "codemirror": "^5.65.19",
+    "date-fns": "^4.1.0",
     "docx": "^9.5.0",
     "fast-xml-parser": "^5.2.1",
     "file-saver": "^2.0.5",

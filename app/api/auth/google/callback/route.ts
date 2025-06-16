@@ -52,30 +52,30 @@ export async function GET(request: NextRequest) {
       console.error('Failed to get user info:', userData);
       return NextResponse.redirect(new URL('/signin?error=user_info_failed', request.url));
     }
-    
-    // Connect to MongoDB
-    await connectDB();
+
+    // Connect to MongoDB - keep verbose logging for authentication
+    await connectDB(false); // Explicitly set to not silent
     console.log('MongoDB connected in Google callback route');
-    
+
     // First check if user exists by googleId
     let user = await User.findOne({ googleId: userData.id });
-    
+
     // If not found by googleId, check by email
     if (!user) {
       // Check if an account with this email already exists
       const existingEmailUser = await User.findOne({ email: userData.email });
-      
+
       if (existingEmailUser) {
         // Link existing account with Google
         existingEmailUser.googleId = userData.id;
         existingEmailUser.picture = userData.picture || existingEmailUser.picture;
-        
+
         // If they already have an authType, add Google as another method
         // but don't change their existing role
         if (existingEmailUser.authType && existingEmailUser.authType !== 'google') {
           console.log(`User ${existingEmailUser.email} has linked Google account to existing ${existingEmailUser.authType} account`);
         }
-        
+
         existingEmailUser.authType = 'google';
         await existingEmailUser.save();
         console.log('✓ Linked Google account to existing user:', existingEmailUser._id);
@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
     response.cookies.set('token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax', 
+      sameSite: 'lax',
       maxAge: 60 * 60 * 24, // 24 hours
       path: '/',
     });

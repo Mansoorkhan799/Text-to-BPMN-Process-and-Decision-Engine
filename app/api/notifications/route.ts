@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
         }
 
         // Connect to the database
-        await connectDB();
+        await connectDB(true); // Use silent mode for routine polling
         const mongoDb = mongoose.connection.db;
 
         if (!mongoDb) {
