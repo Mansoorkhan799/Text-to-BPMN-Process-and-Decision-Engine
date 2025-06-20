@@ -65,7 +65,7 @@ const BpmnDashboard = () => {
         // Redirect to BPMN editor view
         if (typeof window !== 'undefined') {
             sessionStorage.setItem('currentView', 'bpmn');
-            window.location.reload();
+            router.push('/');
         }
     };
 
@@ -81,7 +81,7 @@ const BpmnDashboard = () => {
                 sessionStorage.setItem('projectUserRole', user.role || 'user');
             }
 
-            window.location.reload();
+            router.push('/');
         }
     };
 

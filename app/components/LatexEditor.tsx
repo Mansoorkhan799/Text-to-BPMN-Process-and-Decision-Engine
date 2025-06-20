@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -8,13 +8,14 @@ import {
     FaBold, FaItalic, FaList, FaPlay, FaTable, FaImage,
     FaFont, FaListOl, FaIndent, FaOutdent, FaFileAlt,
     FaHeading, FaUnderline, FaRulerHorizontal, FaCode,
-    FaFileWord, FaFileImport, FaFileUpload
+    FaFileWord, FaFileImport, FaFileUpload, FaEye
 } from 'react-icons/fa';
 import { Switch } from '../components/ui/Switch';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, TableCell, TableRow, Table, AlignmentType, ImageRun, BorderStyle, WidthType } from 'docx';
 import mammoth from 'mammoth';
+import EditorModeSwitch from './ui/EditorModeSwitch';
 
 // Add MathJax declaration for TypeScript
 declare global {
@@ -39,8 +40,17 @@ interface EnhancedMammoth {
 // Cast mammoth to the enhanced type
 const enhancedMammoth = mammoth as unknown as EnhancedMammoth;
 
-const LatexEditor = () => {
+// Define props interface
+interface LatexEditorProps {
+    initialContent?: string;
+    onContentChange?: (content: string) => void;
+    editorMode?: 'code' | 'visual';
+    onEditorModeChange?: (mode: 'code' | 'visual') => void;
+}
+
+const LatexEditor = ({ initialContent, onContentChange, editorMode = 'code', onEditorModeChange }: LatexEditorProps = {}) => {
     const [latexContent, setLatexContent] = useState<string>(
+        initialContent ||
         `\\documentclass{article}
 \\usepackage{amsmath}
 \\usepackage{amssymb}
@@ -71,6 +81,37 @@ This is a sample LaTeX document. You can edit it in the editor.
 
     // Add new state for file input reference
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    // Add a ref to the text style dropdown
+    const textStyleDropdownRef = useRef<HTMLSelectElement>(null);
+
+    // Add state for custom dropdown
+    const [showTextStyleDropdown, setShowTextStyleDropdown] = useState<boolean>(false);
+    const customDropdownRef = useRef<HTMLDivElement>(null);
+    const [selectedDropdownIndex, setSelectedDropdownIndex] = useState(0);
+    const dropdownItemsRef = useRef<(HTMLButtonElement | null)[]>([]);
+
+    // Text style options array for dropdown
+    const textStyleOptions = [
+        { value: 'normal', label: 'Normal text', className: '' },
+        { value: 'section', label: 'Section', className: 'font-bold text-lg' },
+        { value: 'subsection', label: 'Subsection', className: 'font-bold text-md' },
+        { value: 'subsubsection', label: 'Subsubsection', className: 'font-semibold' },
+        { value: 'paragraph', label: 'Paragraph', className: 'font-medium' },
+        { value: 'subparagraph', label: 'Subparagraph', className: 'font-medium text-sm' },
+        { value: 'equation', label: 'Equation', className: 'font-mono' }
+    ];
+
+    // Update content when initialContent prop changes
+    useEffect(() => {
+        if (initialContent && initialContent !== latexContent) {
+            console.log('LatexEditor: initialContent prop changed, updating editor');
+            setLatexContent(initialContent);
+            if (autoCompile) {
+                compileLatex();
+            }
+        }
+    }, [initialContent]);
 
     // Recompile when autoCompile is enabled and content changes
     useEffect(() => {
@@ -477,6 +518,10 @@ This is a sample LaTeX document. You can edit it in the editor.
     const handleEditorChange = (value: string | undefined) => {
         if (value !== undefined) {
             setLatexContent(value);
+            // Call the onContentChange prop if provided
+            if (onContentChange) {
+                onContentChange(value);
+            }
         }
     };
 
@@ -1296,6 +1341,14 @@ This is a sample LaTeX document. You can edit it in the editor.
 
     const insertBold = () => insertTextAtCursor("\\textbf{", "}");
     const insertItalic = () => insertTextAtCursor("\\textit{", "}");
+
+    // Add dedicated insert equation function
+    const insertEquation = () => {
+        const formula = window.prompt('Enter LaTeX formula:', 'E = mc^2');
+        if (!formula) return;
+        insertTextAtCursor(`$$${formula}$$`, "");
+    };
+
     const insertList = (type: string) => {
         if (type === 'bullet') {
             insertTextAtCursor("\\begin{itemize}\n  \\item ", "\n  \\item \n  \\item \n\\end{itemize}");
@@ -1364,18 +1417,42 @@ This is a sample LaTeX document. You can edit it in the editor.
 
     // Add a new function to handle font style changes
     const handleFontStyleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const fontType = e.target.value as 'roman' | 'sans' | 'typewriter' | 'small' | 'normal' | 'large' | 'huge';
+        const fontType = e.target.value as 'roman' | 'sans' | 'typewriter' | 'georgia' | 'verdana' | 'trebuchet';
 
         if (fontType) {
             const fontCommands = {
                 'roman': '\\textrm{',
                 'sans': '\\textsf{',
                 'typewriter': '\\texttt{',
-                'small': '\\small{',
-                'normal': '\\normalsize{',
-                'large': '\\large{',
-                'huge': '\\huge{'
+                'georgia': '\\fontfamily{georgia}\\selectfont{',
+                'verdana': '\\fontfamily{verdana}\\selectfont{',
+                'trebuchet': '\\fontfamily{trebuchet}\\selectfont{'
             };
+
+            // Check if we need to add the fontspec package for specific fonts
+            if (['georgia', 'verdana', 'trebuchet'].includes(fontType) && !latexContent.includes('\\usepackage{fontspec}')) {
+                // Find where to insert the package (before \begin{document})
+                const beginDocIdx = latexContent.indexOf('\\begin{document}');
+                if (beginDocIdx !== -1) {
+                    // Add a comment explaining the XeLaTeX requirement
+                    const packageCode = "\\usepackage{fontspec} % Note: These fonts require XeLaTeX or LuaLaTeX\n";
+                    // Insert before \begin{document}
+                    const newContent = latexContent.slice(0, beginDocIdx) +
+                        packageCode +
+                        latexContent.slice(beginDocIdx);
+                    setLatexContent(newContent);
+
+                    // Update editor content
+                    if (editorInstance) {
+                        editorInstance.setValue(newContent);
+                    }
+
+                    // Show a notification about XeLaTeX requirement
+                    setTimeout(() => {
+                        alert('Note: The selected font requires XeLaTeX or LuaLaTeX compilation. Standard LaTeX may not render this font correctly.');
+                    }, 100);
+                }
+            }
 
             insertTextAtCursor(fontCommands[fontType], '}');
         }
@@ -2237,18 +2314,151 @@ ${latex}
         }
     };
 
+    // Add key event handler for global keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Check for Ctrl+Shift+/ (question mark key)
+            if (e.ctrlKey && e.shiftKey && e.key === '?') {
+                e.preventDefault();
+                // Toggle the custom dropdown instead of focusing the select
+                setShowTextStyleDropdown(true);
+                // Reset selection to first item
+                setSelectedDropdownIndex(0);
+            }
+        };
+
+        // Add event listener
+        document.addEventListener('keydown', handleKeyDown);
+
+        // Cleanup
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, []);
+
+    // Handle dropdown keyboard navigation
+    useEffect(() => {
+        const handleDropdownKeyDown = (e: KeyboardEvent) => {
+            if (!showTextStyleDropdown) return;
+
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    setSelectedDropdownIndex(prev =>
+                        prev < textStyleOptions.length - 1 ? prev + 1 : prev
+                    );
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    setSelectedDropdownIndex(prev =>
+                        prev > 0 ? prev - 1 : prev
+                    );
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    if (selectedDropdownIndex >= 0 && selectedDropdownIndex < textStyleOptions.length) {
+                        applyTextStyleFromDropdown(textStyleOptions[selectedDropdownIndex].value);
+                    }
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    setShowTextStyleDropdown(false);
+                    break;
+            }
+        };
+
+        if (showTextStyleDropdown) {
+            document.addEventListener('keydown', handleDropdownKeyDown);
+        }
+
+        return () => {
+            document.removeEventListener('keydown', handleDropdownKeyDown);
+        };
+    }, [showTextStyleDropdown, selectedDropdownIndex]);
+
+    // Focus the selected item when selectedDropdownIndex changes
+    useEffect(() => {
+        if (showTextStyleDropdown && dropdownItemsRef.current[selectedDropdownIndex]) {
+            dropdownItemsRef.current[selectedDropdownIndex]?.focus();
+        }
+    }, [selectedDropdownIndex, showTextStyleDropdown]);
+
+    // Initialize dropdown items ref array when dropdown opens
+    useEffect(() => {
+        if (showTextStyleDropdown) {
+            dropdownItemsRef.current = Array(textStyleOptions.length).fill(null);
+        }
+    }, [showTextStyleDropdown]);
+
+    // Handle click outside to close the dropdown
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (customDropdownRef.current && !customDropdownRef.current.contains(event.target as HTMLElement)) {
+                setShowTextStyleDropdown(false);
+            }
+        };
+
+        if (showTextStyleDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+        }
+
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside);
+        };
+    }, [showTextStyleDropdown]);
+
+    // Function to apply text style from custom dropdown
+    const applyTextStyleFromDropdown = (style: string) => {
+        // Close the dropdown
+        setShowTextStyleDropdown(false);
+
+        // Apply the selected style
+        switch (style) {
+            case 'normal':
+                // Do nothing, just insert plain text
+                break;
+            case 'section':
+                insertTextAtCursor('\\section{', '}');
+                break;
+            case 'subsection':
+                insertTextAtCursor('\\subsection{', '}');
+                break;
+            case 'subsubsection':
+                insertTextAtCursor('\\subsubsection{', '}');
+                break;
+            case 'paragraph':
+                insertTextAtCursor('\\paragraph{', '}');
+                break;
+            case 'subparagraph':
+                insertTextAtCursor('\\subparagraph{', '}');
+                break;
+            case 'equation':
+                insertEquation();
+                break;
+        }
+    };
+
     return (
-        <div className="flex flex-col h-full overflow-hidden">
-            <div className="border-b py-2 px-4 flex justify-between items-center bg-[#1e1e1e]">
-                <h2 className="text-lg font-semibold text-white flex items-center">
-                    <FaCode className="mr-2" /> LaTeX Editor
+        <div className={`latex-editor-container flex flex-col h-full ${isPreviewFullscreen ? 'fullscreen' : ''}`}>
+            <div className="py-2 px-4 flex items-center bg-[#252a36]">
+                <h2 className="text-lg font-semibold text-white flex items-center mr-4">
+                    <FaCode className="mr-2" /> Code Editor
                 </h2>
-                <div className="flex space-x-2">
+
+                {/* Editor Mode Switch - moved closer to the title */}
+                {onEditorModeChange && (
+                    <EditorModeSwitch
+                        mode={editorMode}
+                        onModeChange={onEditorModeChange}
+                    />
+                )}
+
+                <div className="ml-auto flex items-center space-x-2">
                     <button
                         onClick={toggleFullscreen}
-                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition"
+                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center"
                     >
-                        {isPreviewFullscreen ? 'Exit Preview' : 'Full Preview'}
+                        <FaEye className="mr-1" /> Preview
                     </button>
                     <button
                         id="download-pdf-button"
@@ -2283,7 +2493,7 @@ ${latex}
             </div>
 
             {/* Main Toolbar */}
-            <div className="toolbar-container bg-[#252a36] border-b border-gray-700 flex-shrink-0">
+            <div className="toolbar-container bg-[#252a36] border-gray-700 flex-shrink-0">
                 {/* First row of toolbar */}
                 <div className="flex items-center px-3 py-2 flex-wrap gap-2">
                     {/* Text style dropdown */}
@@ -2291,6 +2501,7 @@ ${latex}
                         <div className="relative">
                             <div className="flex items-center">
                                 <select
+                                    ref={textStyleDropdownRef}
                                     className="w-32 bg-[#1a1f2e] text-white rounded py-1 pl-3 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     defaultValue="normal"
                                     onChange={handleTextStyleChange}
@@ -2319,6 +2530,30 @@ ${latex}
                                     </svg>
                                 </div>
                             </div>
+
+                            {/* Custom dropdown menu */}
+                            {showTextStyleDropdown && (
+                                <div
+                                    ref={customDropdownRef}
+                                    className="absolute z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
+                                    style={{ left: '0', top: '100%' }}
+                                >
+                                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+Shift+?)</div>
+                                    {textStyleOptions.map((option, index) => (
+                                        <button
+                                            key={index}
+                                            ref={el => {
+                                                dropdownItemsRef.current[index] = el;
+                                                return undefined;
+                                            }}
+                                            className={`w-full text-left px-4 py-2 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
+                                            onClick={() => applyTextStyleFromDropdown(option.value)}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -2366,13 +2601,12 @@ ${latex}
                                     }}
                                 >
                                     <option value="font" disabled>Font</option>
-                                    <option value="roman">Roman</option>
                                     <option value="sans">Sans Serif</option>
+                                    <option value="roman">Roman</option>
                                     <option value="typewriter">Typewriter</option>
-                                    <option value="small">Small</option>
-                                    <option value="normal">Normal</option>
-                                    <option value="large">Large</option>
-                                    <option value="huge">Huge</option>
+                                    <option value="georgia">Georgia</option>
+                                    <option value="verdana">Verdana</option>
+                                    <option value="trebuchet">Trebuchet</option>
                                 </select>
                                 <div className="pointer-events-none absolute left-2 flex items-center">
                                     <FaFont size={14} className="text-white" />
@@ -2453,7 +2687,14 @@ ${latex}
                         <FaImage size={14} />
                     </button>
 
-                    {/* Headers and Footers removed */}
+                    {/* Equation insertion - new button */}
+                    <button
+                        onClick={insertEquation}
+                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        title="Insert Equation"
+                    >
+                        <FaRulerHorizontal size={14} />
+                    </button>
 
                     <div className="flex-1"></div>
 

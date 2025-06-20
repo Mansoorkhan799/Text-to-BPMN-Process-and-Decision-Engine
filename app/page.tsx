@@ -8,6 +8,7 @@ import UserHeader from './components/UserHeader';
 import Profile from './components/Profile';
 import ProfileFormWrapper from './components/ProfileFormWrapper';
 import Notifications from './components/Notifications';
+import CombinedLatexEditor from './components/CombinedLatexEditor';
 import toast from 'react-hot-toast';
 import { User } from './types';
 import { RoleBasedUi, ROLES } from './utils/permissions';
@@ -31,17 +32,6 @@ const BpmnDashboard = dynamic(() => import('./components/BpmnDashboard'), {
     <div className="flex items-center justify-center h-full">
       <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
       <span className="ml-2 text-gray-600">Loading BPMN Dashboard...</span>
-    </div>
-  ),
-});
-
-// Import the LaTeX Editor component
-const LatexEditor = dynamic(() => import('./components/LatexEditor'), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center h-full">
-      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-      <span className="ml-2 text-gray-600">Loading LaTeX Editor...</span>
     </div>
   ),
 });
@@ -81,6 +71,10 @@ export default function Home() {
       const savedView = sessionStorage.getItem('currentView');
       if (savedView) {
         setCurrentView(savedView);
+      } else {
+        // Default to dashboard if no view is saved
+        setCurrentView('dashboard');
+        sessionStorage.setItem('currentView', 'dashboard');
       }
     }
 
@@ -112,7 +106,7 @@ export default function Home() {
             setUser(data.user);
             // If a regular user tries to access the users page, redirect to dashboard
             if (data.user.role === 'user' && currentView === 'users') {
-              setCurrentView('dashboard');
+              setCurrentView('latex');
               toast.error('You do not have permission to access the Users page');
             }
           }
@@ -159,6 +153,7 @@ export default function Home() {
         <div className="flex-1 flex flex-col h-full">
           <div className="p-4 h-14"></div>
           <div className="flex-1 flex items-center justify-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
           </div>
         </div>
       </div>
@@ -202,6 +197,12 @@ export default function Home() {
           <UserHeader />
         </div>
 
+        {currentView === 'latex' && (
+          <main className="flex-1 w-full h-full overflow-hidden">
+            <CombinedLatexEditor />
+          </main>
+        )}
+
         {currentView === 'dashboard' && (
           <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -218,12 +219,6 @@ export default function Home() {
         {currentView === 'bpmn' && (
           <main className="flex-1 w-full h-full overflow-hidden">
             <BpmnEditor />
-          </main>
-        )}
-
-        {currentView === 'latex' && (
-          <main className="flex-1 w-full h-full overflow-hidden">
-            <LatexEditor />
           </main>
         )}
 
@@ -259,8 +254,8 @@ export default function Home() {
         {currentView === 'notifications' && user?.role === 'admin' && (
           <div className="h-full flex items-center justify-center">
             <div className="border-4 border-dashed border-gray-200 rounded-lg p-8 max-w-md text-center">
-              <p className="text-xl font-semibold text-gray-700 mb-2">
-                Notifications Not Available
+              <p className="text-xl font-semibold text-red-600 mb-2">
+                Feature Not Available
               </p>
               <p className="text-gray-600">
                 Notifications are only available for users and supervisors.
@@ -269,31 +264,27 @@ export default function Home() {
           </div>
         )}
 
-        {currentView === 'profile' && (
-          <div className="flex-1 overflow-auto px-4 py-4">
-            <div className="max-w-4xl mx-auto">
-              <h1 className="text-2xl font-bold mb-4">My Profile</h1>
+        {currentView === 'profile' && !isEditingProfile && (
+          <div className="flex-1 overflow-auto">
+            <Profile
+              showEditButton={true}
+              onEditClick={handleEditProfile}
+            />
+          </div>
+        )}
 
-              {isEditingProfile ? (
-                <div className="bg-white rounded-lg shadow p-6">
-                  <h2 className="text-lg font-semibold mb-4">Edit Profile</h2>
-                  <ProfileFormWrapper
-                    initialData={user || undefined}
-                    onCancel={handleCancelEditProfile}
-                    onSuccess={(updatedUser) => {
-                      setUser(updatedUser);
-                      setIsEditingProfile(false);
-                    }}
-                    showToast={true}
-                  />
-                </div>
-              ) : (
-                <Profile
-                  showEditButton={true}
-                  onEditClick={handleEditProfile}
-                />
-              )}
-            </div>
+        {currentView === 'profile' && isEditingProfile && (
+          <div className="flex-1 overflow-auto">
+            <ProfileFormWrapper
+              initialData={user || undefined}
+              onCancel={handleCancelEditProfile}
+              onSuccess={(updatedUser) => {
+                setIsEditingProfile(false);
+                // Update user data with the returned user
+                setUser(updatedUser);
+              }}
+              showToast={true}
+            />
           </div>
         )}
       </div>

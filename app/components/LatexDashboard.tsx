@@ -1,14 +1,16 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 const LatexDashboard = () => {
-    const handleCreateNew = () => {
-        // Redirect to LaTeX editor view
-        if (typeof window !== 'undefined') {
-            sessionStorage.setItem('currentView', 'latex');
-            window.location.reload();
-        }
+    const router = useRouter();
+
+    const handleEditorClick = () => {
+        // Save the current view to sessionStorage
+        sessionStorage.setItem('currentView', 'latex');
+        // Navigate to the root with the latex view active
+        router.push('/');
     };
 
     return (
@@ -22,9 +24,9 @@ const LatexDashboard = () => {
             {/* Dotted rectangle container */}
             <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 h-full">
                 <div className="space-y-4">
-                    {/* New LaTeX Document */}
+                    {/* LaTeX Editor */}
                     <div
-                        onClick={handleCreateNew}
+                        onClick={handleEditorClick}
                         className="bg-purple-50 rounded-lg p-4 hover:bg-purple-100 cursor-pointer transition-colors transform hover:scale-[1.02] duration-200 hover:shadow-md"
                     >
                         <div className="flex items-center">
@@ -36,8 +38,8 @@ const LatexDashboard = () => {
                                 </div>
                             </div>
                             <div>
-                                <h2 className="text-xl font-medium text-gray-800">New LaTeX Document</h2>
-                                <p className="text-gray-600 text-sm">Start from scratch with a new document</p>
+                                <h2 className="text-xl font-medium text-gray-800">LaTeX Editor</h2>
+                                <p className="text-gray-600 text-sm">Switch between code and visual editing modes</p>
                             </div>
                         </div>
                     </div>

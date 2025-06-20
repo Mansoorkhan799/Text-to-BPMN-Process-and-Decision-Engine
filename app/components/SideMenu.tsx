@@ -121,7 +121,7 @@ const SideMenu: React.FC<SideMenuProps> = ({
     },
     {
       label: 'LaTeX Editor',
-      icon: <FaCode className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+      icon: <SiLatex className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
       onClick: () => onNavigate('latex'),
       view: 'latex',
       requiredRole: ROLES.USER // Everyone can access
