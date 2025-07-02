@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import BpmnViewerComponent from './BpmnViewer';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
-import { saveProject, getProjectById, canAccessProject } from '../utils/projectStorage';
+import BpmnColorPickerModule from 'bpmn-js-color-picker';
+import { saveProject, getProjectById, canAccessProject, BpmnProject } from '../utils/projectStorage';
 import { addProjectVersion } from '../utils/projectVersions';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'react-hot-toast';
@@ -13,6 +14,8 @@ import * as XLSX from 'xlsx';
 import dynamic from 'next/dynamic';
 // Add the DuplicateWarningModal import
 const DuplicateWarningModal = dynamic(() => import('./DuplicateWarningModal'), { ssr: false });
+// Add the BpmnFileTree import
+const BpmnFileTree = dynamic(() => import('./BpmnFileTree'), { ssr: false });
 
 // Add custom CSS for grid background
 const gridStyles = `
@@ -134,6 +137,8 @@ const BpmnEditor = () => {
     const [pendingXml, setPendingXml] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [hasChanges, setHasChanges] = useState(false);
+    const [showFileTree, setShowFileTree] = useState(true);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     // Fetch current user on component mount
     useEffect(() => {
@@ -248,6 +253,7 @@ const BpmnEditor = () => {
                 // Import CSS files
                 await import('bpmn-js/dist/assets/diagram-js.css');
                 await import('bpmn-js/dist/assets/bpmn-font/css/bpmn.css');
+                await import('bpmn-js-color-picker/colors/color-picker.css');
                 setStylesLoaded(true);
             } catch (err) {
                 console.error('Error loading styles:', err);
@@ -266,7 +272,10 @@ const BpmnEditor = () => {
             container: containerRef.current,
             keyboard: {
                 bindTo: window
-            }
+            },
+            additionalModules: [
+                BpmnColorPickerModule
+            ]
         });
 
         // Set the modeler state
@@ -466,6 +475,37 @@ const BpmnEditor = () => {
         modeler.importXML(INITIAL_DIAGRAM).catch((err: any) => {
             console.error('Error importing BPMN diagram', err);
         });
+    };
+
+    // Function to handle project selection from file tree
+    const handleProjectSelect = (project: BpmnProject) => {
+        setProjectId(project.id);
+        setProjectName(project.name);
+        
+        if (project.xml && modeler) {
+            modeler.importXML(project.xml)
+                .then(() => {
+                    toast.success(`Project "${project.name}" loaded successfully!`);
+                    setTimeout(() => {
+                        modeler.get('canvas').zoom('fit-viewport');
+                    }, 100);
+                })
+                .catch((err: any) => {
+                    console.error('Error loading project:', err);
+                    toast.error('Failed to load project');
+                });
+        }
+    };
+
+    // Function to handle new project creation from file tree
+    const handleNewProject = () => {
+        setProjectId(null);
+        setProjectName('Untitled Diagram');
+        if (modeler) {
+            modeler.importXML(INITIAL_DIAGRAM).catch((err: any) => {
+                console.error('Error importing BPMN diagram', err);
+            });
+        }
     };
 
     // Function to open the viewer
@@ -1885,417 +1925,517 @@ const BpmnEditor = () => {
         );
     }
 
+    // Add this function to handle file uploads from the file tree
+    const handleFileUpload = async (file: File, fileType: 'bpmn' | 'json' | 'excel') => {
+        let xml = '';
+        let name = file.name.replace(/\.[^/.]+$/, "");
+        try {
+            if (fileType === 'bpmn') {
+                // Read as text and treat as BPMN XML
+                xml = await file.text();
+            } else if (fileType === 'json') {
+                // Read as text, parse JSON, convert to XML
+                const jsonText = await file.text();
+                const jsonData = JSON.parse(jsonText);
+                if (jsonData['bpmn:definitions']) {
+                    // Use fast-xml-parser to convert JSON to XML
+                    const { XMLBuilder } = require('fast-xml-parser');
+                    const builder = new XMLBuilder({
+                        attributeNamePrefix: '@_',
+                        textNodeName: '#text',
+                        ignoreAttributes: false,
+                        format: true,
+                        suppressEmptyNode: false
+                    });
+                    xml = builder.build(jsonData);
+                    if (!xml.startsWith('<?xml')) {
+                        xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml;
+                    }
+                } else {
+                    toast.error('Invalid JSON structure for BPMN diagram.');
+                    return;
+                }
+            } else if (fileType === 'excel') {
+                // Use XLSX to read Excel and convert to BPMN XML
+                const data = await readExcelFile(file);
+                if (!data || data.length === 0) {
+                    toast.error('Excel file is empty or invalid');
+                    return;
+                }
+                xml = convertExcelToBpmn(data, name);
+            }
+            // Save as a new project
+            const id = uuidv4();
+            saveProject({
+                id,
+                name,
+                lastEdited: new Date().toISOString().split('T')[0],
+                xml
+            }, user?.id, user?.role);
+            toast.success(`File "${file.name}" uploaded as project!`);
+            // Optionally, refresh the file tree by toggling showFileTree
+            setShowFileTree(false); setTimeout(() => setShowFileTree(true), 10);
+        } catch (err) {
+            toast.error('Failed to upload file: ' + ((err as Error)?.message || err));
+        }
+    };
+
     return (
-        <div className="flex flex-col h-full">
-            {/* Toolbar with icons */}
-            <div className="bg-white border-b px-4 py-2 flex items-center space-x-4">
-                {/* Back button */}
-                <button
-                    onClick={handleBackToDashboard}
-                    className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
-                    title="Back to Dashboard"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-                    </svg>
-                </button>
-
-                {/* Project name (editable or display) */}
-                <div className="text-gray-700 font-medium ml-2 flex items-center overflow-hidden">
-                    {isRenaming ? (
-                        <div className="flex items-center">
-                            <input
-                                ref={projectNameInputRef}
-                                type="text"
-                                value={tempProjectName}
-                                onChange={(e) => setTempProjectName(e.target.value)}
-                                onKeyDown={handleRenameKeyDown}
-                                className="border border-gray-300 rounded px-2 py-1 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                placeholder="Enter project name"
-                            />
-                            <button
-                                onClick={handleSaveRename}
-                                className="ml-2 p-1 text-green-600 hover:bg-green-50 rounded"
-                                title="Save"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                </svg>
-                            </button>
-                            <button
-                                onClick={handleCancelRename}
-                                className="ml-1 p-1 text-red-600 hover:bg-red-50 rounded"
-                                title="Cancel"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                </svg>
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="flex items-center truncate max-w-md">
-                            <span className="mr-2 truncate">
-                                {projectName}
-                                {projectId ? ` (ID: ${projectId})` : ''}
-                            </span>
-                            <button
-                                onClick={handleStartRename}
-                                className="p-1 text-gray-500 hover:bg-gray-100 rounded shrink-0"
-                                title="Rename Project"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                                </svg>
-                            </button>
-                        </div>
-                    )}
-                </div>
-
-                <div className="h-6 border-l border-gray-300 mx-1"></div>
-
-                {/* Middle section buttons */}
-                <div className="flex items-center space-x-4 flex-grow">
-                    {/* New Diagram */}
+        <div className="flex h-full relative">
+            {/* File Tree Sidebar */}
+            {showFileTree && !sidebarCollapsed && (
+                <div className="relative w-64 flex-shrink-0 bg-white border-r">
+                    <BpmnFileTree
+                        user={user}
+                        onProjectSelect={handleProjectSelect}
+                        onNewProject={handleNewProject}
+                        onFileUpload={handleFileUpload}
+                        currentProjectId={projectId}
+                    />
+                    {/* Collapse Arrow */}
                     <button
-                        onClick={handleNew}
+                        onClick={() => setSidebarCollapsed(true)}
+                        className="absolute top-1/2 -right-3 transform -translate-y-1/2 bg-white border border-gray-300 rounded-full shadow p-1 z-10 hover:bg-gray-100"
+                        title="Collapse Sidebar"
+                        style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                </div>
+            )}
+            {/* Expand Arrow when sidebar is collapsed */}
+            {sidebarCollapsed && (
+                <div className="absolute top-1/2 left-0 z-20 flex flex-col items-center" style={{ transform: 'translateY(-50%)' }}>
+                    <button
+                        onClick={() => setSidebarCollapsed(false)}
+                        className="flex flex-col items-center justify-center bg-white border border-gray-300 rounded-r-lg shadow px-2 py-3 hover:bg-gray-100 focus:outline-none"
+                        title="Expand Sidebar"
+                        style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)', minHeight: '64px' }}
+                    >
+                        {/* Folder Icon */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h3.172a2 2 0 011.414.586l1.828 1.828A2 2 0 0012.828 8H19a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                        </svg>
+                        {/* Arrow Icon */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </div>
+            )}
+            <div className={`flex flex-1 flex-col overflow-hidden${sidebarCollapsed ? ' ml-14' : ''}`}>
+                {/* Toolbar with icons */}
+                <div className="bg-white border-b px-4 py-2 flex items-center space-x-4">
+                    {/* Back button */}
+                    <button
+                        onClick={handleBackToDashboard}
                         className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
-                        title="New Diagram"
+                        title="Back to Dashboard"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V8z" clipRule="evenodd" />
+                            <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
                         </svg>
                     </button>
 
-                    <div className="h-6 border-l border-gray-300 mx-1"></div>
-
-                    {/* Import Dropdown */}
-                    <div className="relative import-dropdown">
-                        <button
-                            onClick={toggleImportDropdown}
-                            disabled={importingFile}
-                            className={`inline-flex items-center justify-center p-2 rounded-md ${importingFile ? 'text-orange-400' : 'text-orange-600 hover:bg-orange-50'} transition-colors focus:outline-none`}
-                            title="Import Diagram"
-                        >
-                            {importingFile ? (
-                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            ) : (
-                                <div className="flex items-center">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                                    </svg>
-                                    <span className="ml-1 font-medium text-sm">Import</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
-                                    </svg>
-                                </div>
-                            )}
-                        </button>
-
-                        {showImportDropdown && (
-                            <div className="absolute z-10 mt-1 w-44 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
-                                <div className="py-1" role="menu" aria-orientation="vertical">
-                                    {/* JSON Import Option */}
-                                    <button
-                                        onClick={() => {
-                                            const jsonFileInput = document.createElement('input');
-                                            jsonFileInput.type = 'file';
-                                            jsonFileInput.accept = '.json';
-                                            jsonFileInput.onchange = (e: any) => {
-                                                const file = e.target.files?.[0];
-                                                if (file && modeler) {
-                                                    handleJsonImport(file);
-                                                }
-                                            };
-                                            jsonFileInput.click();
-                                            setShowImportDropdown(false);
-                                        }}
-                                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
-                                        role="menuitem"
-                                    >
-                                        <svg className="h-5 w-5 mr-3 text-orange-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M8 16L10 18L12 16M16 12L14 10L16 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        JSON File
-                                    </button>
-
-                                    {/* BPMN Option */}
-                                    <button
-                                        onClick={() => {
-                                            const bpmnFileInput = document.createElement('input');
-                                            bpmnFileInput.type = 'file';
-                                            bpmnFileInput.accept = '.bpmn,.xml';
-                                            bpmnFileInput.onchange = (e: any) => {
-                                                const file = e.target.files?.[0];
-                                                if (file && modeler) {
-                                                    handleXmlImport(file);
-                                                }
-                                            };
-                                            bpmnFileInput.click();
-                                            setShowImportDropdown(false);
-                                        }}
-                                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
-                                        role="menuitem"
-                                    >
-                                        <svg className="h-5 w-5 mr-3 text-purple-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M9 15L7 12L9 9M15 9L17 12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        BPMN/XML File
-                                    </button>
-
-                                    {/* Excel Option */}
-                                    <button
-                                        onClick={() => {
-                                            const excelFileInput = document.createElement('input');
-                                            excelFileInput.type = 'file';
-                                            excelFileInput.accept = '.xlsx';
-                                            excelFileInput.onchange = (e: any) => {
-                                                const file = e.target.files?.[0];
-                                                if (file && modeler) {
-                                                    handleExcelImport(file);
-                                                }
-                                            };
-                                            excelFileInput.click();
-                                            setShowImportDropdown(false);
-                                        }}
-                                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
-                                        role="menuitem"
-                                    >
-                                        <svg className="h-5 w-5 mr-3 text-teal-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M9 15L7 12L9 9M15 9L17 12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        Excel File
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-
-                    <div className="h-6 border-l border-gray-300 mx-1"></div>
-
-                    {/* Save Project button */}
-                    <button
-                        onClick={handleSaveProject}
-                        disabled={downloading}
-                        className={`inline-flex items-center justify-center p-2 rounded-md ${downloading ? 'text-green-400' : 'text-green-600 hover:bg-green-50'} transition-colors focus:outline-none`}
-                        title="Save Project"
-                    >
-                        {downloading ? (
-                            <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                        ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
-                            </svg>
-                        )}
-                    </button>
-
-                    <div className="h-6 border-l border-gray-300 mx-1"></div>
-
-                    {/* Export Dropdown */}
-                    <div className="relative export-dropdown">
-                        <button
-                            onClick={toggleExportDropdown}
-                            disabled={exportingFile}
-                            className={`inline-flex items-center justify-center p-2 rounded-md ${exportingFile ? 'text-blue-400' : 'text-blue-600 hover:bg-blue-50'} transition-colors focus:outline-none`}
-                            title="Export Diagram"
-                        >
-                            {exportingFile ? (
-                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                            ) : (
-                                <div className="flex items-center">
+                    {/* Project name (editable or display) */}
+                    <div className="text-gray-700 font-medium ml-2 flex items-center overflow-hidden">
+                        {isRenaming ? (
+                            <div className="flex items-center">
+                                <input
+                                    ref={projectNameInputRef}
+                                    type="text"
+                                    value={tempProjectName}
+                                    onChange={(e) => setTempProjectName(e.target.value)}
+                                    onKeyDown={handleRenameKeyDown}
+                                    className="border border-gray-300 rounded px-2 py-1 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="Enter project name"
+                                />
+                                <button
+                                    onClick={handleSaveRename}
+                                    className="ml-2 p-1 text-green-600 hover:bg-green-50 rounded"
+                                    title="Save"
+                                >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L10 8.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                     </svg>
-                                    <span className="ml-1 font-medium text-sm">Download</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                </button>
+                                <button
+                                    onClick={handleCancelRename}
+                                    className="ml-1 p-1 text-red-600 hover:bg-red-50 rounded"
+                                    title="Cancel"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                                     </svg>
-                                </div>
-                            )}
-                        </button>
-
-                        {showExportDropdown && (
-                            <div className="absolute z-10 mt-1 w-44 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
-                                <div className="py-1" role="menu" aria-orientation="vertical">
-                                    {/* SVG Option */}
-                                    <button
-                                        onClick={() => {
-                                            handleSaveSVG();
-                                            setShowExportDropdown(false);
-                                        }}
-                                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
-                                        role="menuitem"
-                                    >
-                                        <svg className="h-5 w-5 mr-3 text-blue-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M9 15.5V12M12 15.5V12M15 15.5V12M9 15.5H15M9 15.5C9 17 10.5 18 12 18C13.5 18 15 17 15 15.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        SVG
-                                    </button>
-
-                                    {/* JSON Option */}
-                                    <button
-                                        onClick={() => {
-                                            handleSaveJSON();
-                                            setShowExportDropdown(false);
-                                        }}
-                                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
-                                        role="menuitem"
-                                    >
-                                        <svg className="h-5 w-5 mr-3 text-green-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M8 16L10 18L12 16M16 12L14 10L16 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        JSON
-                                    </button>
-
-                                    {/* XML Option */}
-                                    <button
-                                        onClick={() => {
-                                            handleSaveXML();
-                                            setShowExportDropdown(false);
-                                        }}
-                                        className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
-                                        role="menuitem"
-                                    >
-                                        <svg className="h-5 w-5 mr-3 text-purple-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                            <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M9 15L7 12L9 9M15 9L17 12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                        BPMN/XML
-                                    </button>
-                                </div>
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center truncate max-w-md">
+                                <span className="mr-2 truncate">
+                                    {projectName}
+                                    {projectId ? ` (ID: ${projectId})` : ''}
+                                </span>
+                                <button
+                                    onClick={handleStartRename}
+                                    className="p-1 text-gray-500 hover:bg-gray-100 rounded shrink-0"
+                                    title="Rename Project"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                                    </svg>
+                                </button>
                             </div>
                         )}
                     </div>
 
                     <div className="h-6 border-l border-gray-300 mx-1"></div>
 
-                    {/* Zoom In */}
-                    <button
-                        onClick={() => modeler?.get('canvas').zoom(modeler.get('canvas').zoom() + 0.1)}
-                        className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
-                        title="Zoom In"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                        </svg>
-                    </button>
-
-                    {/* Zoom Out */}
-                    <button
-                        onClick={() => modeler?.get('canvas').zoom(modeler.get('canvas').zoom() - 0.1)}
-                        className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
-                        title="Zoom Out"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
-                        </svg>
-                    </button>
-
-                    {/* Fit to View */}
-                    <button
-                        onClick={() => modeler?.get('canvas').zoom('fit-viewport')}
-                        className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
-                        title="Fit to View"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
-                        </svg>
-                    </button>
-                </div>
-
-                {/* Right-side action buttons with fixed width */}
-                <div className="flex items-center gap-2 ml-auto">
-                    {/* View Diagram */}
-                    <button
-                        onClick={handleOpenViewer}
-                        className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-purple-100 text-purple-600 hover:bg-purple-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px]"
-                        title="View Diagram"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                        </svg>
-                        <span className="font-medium">View Diagram</span>
-                    </button>
-
-                    {/* Send for Approval - only show for regular users */}
-                    {user && user.role === 'user' && (
+                    {/* Middle section buttons */}
+                    <div className="flex items-center space-x-4 flex-grow">
+                        {/* New Diagram */}
                         <button
-                            onClick={handleSendForApproval}
-                            disabled={sendingForApproval}
-                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-green-100 text-green-600 hover:bg-green-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px]"
-                            title="Send for Approval"
+                            onClick={handleNew}
+                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            title="New Diagram"
                         >
-                            {sendingForApproval ? (
-                                <>
-                                    <svg className="animate-spin h-5 w-5 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V8z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+
+                        <div className="h-6 border-l border-gray-300 mx-1"></div>
+
+                        {/* Import Dropdown */}
+                        <div className="relative import-dropdown">
+                            <button
+                                onClick={toggleImportDropdown}
+                                disabled={importingFile}
+                                className={`inline-flex items-center justify-center p-2 rounded-md ${importingFile ? 'text-orange-400' : 'text-orange-600 hover:bg-orange-50'} transition-colors focus:outline-none`}
+                                title="Import Diagram"
+                            >
+                                {importingFile ? (
+                                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
-                                    <span className="font-medium">Sending...</span>
-                                </>
+                                ) : (
+                                    <div className="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                                        </svg>
+                                        <span className="ml-1 font-medium text-sm">Import</span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                )}
+                            </button>
+
+                            {showImportDropdown && (
+                                <div className="absolute z-10 mt-1 w-44 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                    <div className="py-1" role="menu" aria-orientation="vertical">
+                                        {/* JSON Import Option */}
+                                        <button
+                                            onClick={() => {
+                                                const jsonFileInput = document.createElement('input');
+                                                jsonFileInput.type = 'file';
+                                                jsonFileInput.accept = '.json';
+                                                jsonFileInput.onchange = (e: any) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file && modeler) {
+                                                        handleJsonImport(file);
+                                                    }
+                                                };
+                                                jsonFileInput.click();
+                                                setShowImportDropdown(false);
+                                            }}
+                                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                                            role="menuitem"
+                                        >
+                                            <svg className="h-5 w-5 mr-3 text-orange-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M8 16L10 18L12 16M16 12L14 10L16 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            JSON File
+                                        </button>
+
+                                        {/* BPMN Option */}
+                                        <button
+                                            onClick={() => {
+                                                const bpmnFileInput = document.createElement('input');
+                                                bpmnFileInput.type = 'file';
+                                                bpmnFileInput.accept = '.bpmn,.xml';
+                                                bpmnFileInput.onchange = (e: any) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file && modeler) {
+                                                        handleXmlImport(file);
+                                                    }
+                                                };
+                                                bpmnFileInput.click();
+                                                setShowImportDropdown(false);
+                                            }}
+                                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                                            role="menuitem"
+                                        >
+                                            <svg className="h-5 w-5 mr-3 text-purple-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M9 15L7 12L9 9M15 9L17 12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            BPMN/XML File
+                                        </button>
+
+                                        {/* Excel Option */}
+                                        <button
+                                            onClick={() => {
+                                                const excelFileInput = document.createElement('input');
+                                                excelFileInput.type = 'file';
+                                                excelFileInput.accept = '.xlsx';
+                                                excelFileInput.onchange = (e: any) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file && modeler) {
+                                                        handleExcelImport(file);
+                                                    }
+                                                };
+                                                excelFileInput.click();
+                                                setShowImportDropdown(false);
+                                            }}
+                                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                                            role="menuitem"
+                                        >
+                                            <svg className="h-5 w-5 mr-3 text-teal-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M9 15L7 12L9 9M15 9L17 12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            Excel File
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="h-6 border-l border-gray-300 mx-1"></div>
+
+                        {/* Save Project button */}
+                        <button
+                            onClick={handleSaveProject}
+                            disabled={downloading}
+                            className={`inline-flex items-center justify-center p-2 rounded-md ${downloading ? 'text-green-400' : 'text-green-600 hover:bg-green-50'} transition-colors focus:outline-none`}
+                            title="Save Project"
+                        >
+                            {downloading ? (
+                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
                             ) : (
-                                <>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                    </svg>
-                                    <span className="font-medium">Send for Approval</span>
-                                </>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
+                                </svg>
                             )}
                         </button>
-                    )}
+
+                        <div className="h-6 border-l border-gray-300 mx-1"></div>
+
+                        {/* Export Dropdown */}
+                        <div className="relative export-dropdown">
+                            <button
+                                onClick={toggleExportDropdown}
+                                disabled={exportingFile}
+                                className={`inline-flex items-center justify-center p-2 rounded-md ${exportingFile ? 'text-blue-400' : 'text-blue-600 hover:bg-blue-50'} transition-colors focus:outline-none`}
+                                title="Export Diagram"
+                            >
+                                {exportingFile ? (
+                                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                ) : (
+                                    <div className="flex items-center">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L10 8.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                        <span className="ml-1 font-medium text-sm">Download</span>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
+                                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                                        </svg>
+                                    </div>
+                                )}
+                            </button>
+
+                            {showExportDropdown && (
+                                <div className="absolute z-10 mt-1 w-44 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5">
+                                    <div className="py-1" role="menu" aria-orientation="vertical">
+                                        {/* SVG Option */}
+                                        <button
+                                            onClick={() => {
+                                                handleSaveSVG();
+                                                setShowExportDropdown(false);
+                                            }}
+                                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                                            role="menuitem"
+                                        >
+                                            <svg className="h-5 w-5 mr-3 text-blue-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M9 15.5V12M12 15.5V12M15 15.5V12M9 15.5H15M9 15.5C9 17 10.5 18 12 18C13.5 18 15 17 15 15.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            SVG
+                                        </button>
+
+                                        {/* JSON Option */}
+                                        <button
+                                            onClick={() => {
+                                                handleSaveJSON();
+                                                setShowExportDropdown(false);
+                                            }}
+                                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                                            role="menuitem"
+                                        >
+                                            <svg className="h-5 w-5 mr-3 text-green-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M8 16L10 18L12 16M16 12L14 10L16 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            JSON
+                                        </button>
+
+                                        {/* XML Option */}
+                                        <button
+                                            onClick={() => {
+                                                handleSaveXML();
+                                                setShowExportDropdown(false);
+                                            }}
+                                            className="flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 w-full text-left"
+                                            role="menuitem"
+                                        >
+                                            <svg className="h-5 w-5 mr-3 text-purple-500" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <path d="M14 2H6C4.89543 2 4 2.89543 4 4V20C4 21.1046 4.89543 22 6 22H18C19.1046 22 20 21.1046 20 20V8L14 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M14 2V8H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                                <path d="M9 15L7 12L9 9M15 9L17 12L15 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                            BPMN/XML
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="h-6 border-l border-gray-300 mx-1"></div>
+
+                        {/* Zoom In */}
+                        <button
+                            onClick={() => modeler?.get('canvas').zoom(modeler.get('canvas').zoom() + 0.1)}
+                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            title="Zoom In"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                            </svg>
+                        </button>
+
+                        {/* Zoom Out */}
+                        <button
+                            onClick={() => modeler?.get('canvas').zoom(modeler.get('canvas').zoom() - 0.1)}
+                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            title="Zoom Out"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                            </svg>
+                        </button>
+
+                        {/* Fit to View */}
+                        <button
+                            onClick={() => modeler?.get('canvas').zoom('fit-viewport')}
+                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            title="Fit to View"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    {/* Right-side action buttons with fixed width */}
+                    <div className="flex items-center gap-2 ml-auto">
+                        {/* View Diagram */}
+                        <button
+                            onClick={handleOpenViewer}
+                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-purple-100 text-purple-600 hover:bg-purple-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px]"
+                            title="View Diagram"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span className="font-medium">View Diagram</span>
+                        </button>
+
+                        {/* Send for Approval - only show for regular users */}
+                        {user && user.role === 'user' && (
+                            <button
+                                onClick={handleSendForApproval}
+                                disabled={sendingForApproval}
+                                className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-green-100 text-green-600 hover:bg-green-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px]"
+                                title="Send for Approval"
+                            >
+                                {sendingForApproval ? (
+                                    <>
+                                        <svg className="animate-spin h-5 w-5 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        <span className="font-medium">Sending...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                        </svg>
+                                        <span className="font-medium">Send for Approval</span>
+                                    </>
+                                )}
+                            </button>
+                        )}
+                    </div>
                 </div>
-            </div>
 
-            {/* Main container with editor */}
-            <div className="flex flex-1 overflow-hidden">
-                {/* Editor Container */}
-                <div
-                    ref={containerRef}
-                    className="flex-1 bg-white"
-                    style={{ height: 'calc(100vh - 140px)' }}
+                {/* Main container with editor */}
+                <div className="flex flex-1 overflow-hidden">
+                    {/* Editor Container */}
+                    <div
+                        ref={containerRef}
+                        className="flex-1 bg-white"
+                        style={{ height: 'calc(100vh - 140px)' }}
+                    />
+                </div>
+
+                {/* BPMN Viewer Modal */}
+                {showViewer && (
+                    <BpmnViewerComponent
+                        diagramXML={currentDiagramXML}
+                        onClose={() => setShowViewer(false)}
+                        title={`BPMN Viewer: ${projectName}`}
+                        projectId={projectId === null ? undefined : projectId}
+                        userId={user?.id}
+                        userRole={user?.role}
+                    />
+                )}
+
+                {/* Add the duplicate warning modal */}
+                <DuplicateWarningModal
+                    isOpen={showDuplicateWarning}
+                    onClose={handleCancelSubmission}
+                    onProceed={handleProceedWithSubmission}
+                    duplicateInfo={duplicateInfo}
+                    projectNameMatch={projectNameMatch}
                 />
             </div>
-
-            {/* BPMN Viewer Modal */}
-            {showViewer && (
-                <BpmnViewerComponent
-                    diagramXML={currentDiagramXML}
-                    onClose={() => setShowViewer(false)}
-                    title={`BPMN Viewer: ${projectName}`}
-                    projectId={projectId === null ? undefined : projectId}
-                    userId={user?.id}
-                    userRole={user?.role}
-                />
-            )}
-
-            {/* Add the duplicate warning modal */}
-            <DuplicateWarningModal
-                isOpen={showDuplicateWarning}
-                onClose={handleCancelSubmission}
-                onProceed={handleProceedWithSubmission}
-                duplicateInfo={duplicateInfo}
-                projectNameMatch={projectNameMatch}
-            />
         </div>
     );
 };

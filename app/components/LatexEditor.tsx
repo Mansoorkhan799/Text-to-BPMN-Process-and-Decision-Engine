@@ -78,6 +78,7 @@ This is a sample LaTeX document. You can edit it in the editor.
     const [editorInstance, setEditorInstance] = useState<any>(null);
     const previewRef = useRef<HTMLDivElement>(null);
     const [imageMap, setImageMap] = useState<{ [filename: string]: string }>({});
+    const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
 
     // Add new state for file input reference
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -93,13 +94,13 @@ This is a sample LaTeX document. You can edit it in the editor.
 
     // Text style options array for dropdown
     const textStyleOptions = [
-        { value: 'normal', label: 'Normal text', className: '' },
-        { value: 'section', label: 'Section', className: 'font-bold text-lg' },
-        { value: 'subsection', label: 'Subsection', className: 'font-bold text-md' },
-        { value: 'subsubsection', label: 'Subsubsection', className: 'font-semibold' },
-        { value: 'paragraph', label: 'Paragraph', className: 'font-medium' },
-        { value: 'subparagraph', label: 'Subparagraph', className: 'font-medium text-sm' },
-        { value: 'equation', label: 'Equation', className: 'font-mono' }
+        { value: 'normal', label: 'Normal text', className: 'text-sm' },
+        { value: 'section', label: 'Section', className: 'font-bold text-base' },
+        { value: 'subsection', label: 'Subsection', className: 'font-bold text-sm' },
+        { value: 'subsubsection', label: 'Subsubsection', className: 'font-semibold text-sm' },
+        { value: 'paragraph', label: 'Paragraph', className: 'font-medium text-sm' },
+        { value: 'subparagraph', label: 'Subparagraph', className: 'font-medium text-xs' },
+        { value: 'equation', label: 'Equation', className: 'font-mono text-sm' }
     ];
 
     // Update content when initialContent prop changes
@@ -525,7 +526,7 @@ This is a sample LaTeX document. You can edit it in the editor.
         }
     };
 
-    const handleEditorDidMount = (editor: any) => {
+    const handleEditorDidMount = (editor: any, monaco: any) => {
         setEditorInstance(editor);
 
         // Prevent scrolling in editor from affecting the page
@@ -534,6 +535,35 @@ This is a sample LaTeX document. You can edit it in the editor.
             editorElement.addEventListener('wheel', (e: WheelEvent) => {
                 e.stopPropagation();
             }, { passive: false });
+        }
+
+        // Add keyboard shortcut handling directly to the editor
+        if (monaco) {
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Slash, () => {
+                const editorDomNode = editor.getDomNode();
+                if (!editorDomNode) return;
+
+                const cursor = editorDomNode.querySelector('.cursors-layer .cursor');
+                const position = editor.getPosition();
+
+                if (cursor && position) {
+                    const cursorRect = cursor.getBoundingClientRect();
+                    const dropdownHeight = 220; // Estimated height of the dropdown
+
+                    let top = cursorRect.bottom;
+                    if (top + dropdownHeight > window.innerHeight) {
+                        top = cursorRect.top - dropdownHeight;
+                    }
+
+                    setDropdownPosition({ top, left: cursorRect.left });
+                } else {
+                    const fallbackPosition = editor.getScrolledVisibleRange().getTopLeft();
+                    setDropdownPosition(fallbackPosition);
+                }
+
+                setShowTextStyleDropdown(true);
+                setSelectedDropdownIndex(0);
+            });
         }
     };
 
@@ -2317,8 +2347,8 @@ ${latex}
     // Add key event handler for global keyboard shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Check for Ctrl+Shift+/ (question mark key)
-            if (e.ctrlKey && e.shiftKey && e.key === '?') {
+            // Check for Ctrl+/ (forward slash key)
+            if (e.ctrlKey && e.key === '/') {
                 e.preventDefault();
                 // Toggle the custom dropdown instead of focusing the select
                 setShowTextStyleDropdown(true);
@@ -2532,13 +2562,16 @@ ${latex}
                             </div>
 
                             {/* Custom dropdown menu */}
-                            {showTextStyleDropdown && (
+                            {showTextStyleDropdown && dropdownPosition && (
                                 <div
                                     ref={customDropdownRef}
-                                    className="absolute z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
-                                    style={{ left: '0', top: '100%' }}
+                                    className="fixed z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
+                                    style={{
+                                        top: `${dropdownPosition.top}px`,
+                                        left: `${dropdownPosition.left}px`,
+                                    }}
                                 >
-                                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+Shift+?)</div>
+                                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+/)</div>
                                     {textStyleOptions.map((option, index) => (
                                         <button
                                             key={index}
@@ -2546,7 +2579,7 @@ ${latex}
                                                 dropdownItemsRef.current[index] = el;
                                                 return undefined;
                                             }}
-                                            className={`w-full text-left px-4 py-2 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
+                                            className={`w-full text-left px-4 py-1 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
                                             onClick={() => applyTextStyleFromDropdown(option.value)}
                                         >
                                             {option.label}
@@ -2762,6 +2795,33 @@ ${latex}
                         className="latex-preview max-w-4xl mx-auto"
                         dangerouslySetInnerHTML={{ __html: renderOutput }}
                     />
+                </div>
+            )}
+
+            {/* Custom dropdown menu */}
+            {showTextStyleDropdown && dropdownPosition && (
+                <div
+                    ref={customDropdownRef}
+                    className="fixed z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
+                    style={{
+                        top: `${dropdownPosition.top}px`,
+                        left: `${dropdownPosition.left}px`,
+                    }}
+                >
+                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+/)</div>
+                    {textStyleOptions.map((option, index) => (
+                        <button
+                            key={index}
+                            ref={el => {
+                                dropdownItemsRef.current[index] = el;
+                                return undefined;
+                            }}
+                            className={`w-full text-left px-4 py-1 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
+                            onClick={() => applyTextStyleFromDropdown(option.value)}
+                        >
+                            {option.label}
+                        </button>
+                    ))}
                 </div>
             )}
 

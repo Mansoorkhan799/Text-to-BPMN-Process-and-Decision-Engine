@@ -1212,7 +1212,8 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     const [latexCode, setLatexCode] = useState<string>("");
 
     // State for preview
-    const [showPreview, setShowPreview] = useState<boolean>(false);
+    const [showPreview, setShowPreview] = useState<boolean>(true);
+    const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
 
     // State for rendered preview - set to true by default
     const [showRenderedPreview, setShowRenderedPreview] = useState<boolean>(true);
@@ -1243,13 +1244,13 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
 
     // Text style options array for dropdown
     const textStyleOptions = [
-        { value: 'paragraph', label: 'Normal text', className: '' },
-        { value: 'heading-1', label: 'Section', className: 'font-bold text-lg' },
-        { value: 'heading-2', label: 'Subsection', className: 'font-bold text-md' },
-        { value: 'heading-3', label: 'Subsubsection', className: 'font-semibold' },
-        { value: 'paragraph-specific', label: 'Paragraph', className: 'font-medium' },
-        { value: 'subparagraph-specific', label: 'Subparagraph', className: 'font-medium text-sm' },
-        { value: 'equation', label: 'Equation', className: 'font-mono' }
+        { value: 'paragraph', label: 'Normal text', className: 'text-sm' },
+        { value: 'heading-2', label: 'Section', className: 'font-bold text-base' },
+        { value: 'heading-3', label: 'Subsection', className: 'font-bold text-sm' },
+        { value: 'heading-4', label: 'Subsubsection', className: 'font-semibold text-sm' },
+        { value: 'paragraph-specific', label: 'Paragraph', className: 'font-medium text-sm' },
+        { value: 'subparagraph-specific', label: 'Subparagraph', className: 'font-medium text-xs' },
+        { value: 'equation', label: 'Equation', className: 'font-mono text-sm' }
     ];
 
     // Load MathJax if needed
@@ -1303,24 +1304,36 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     // Handle keyboard shortcuts
     useEffect(() => {
         const handleGlobalKeyDown = (e: KeyboardEvent) => {
-            // Check for Ctrl+Shift+/ (question mark key)
-            if (e.ctrlKey && e.shiftKey && e.key === '?') {
+            if (e.ctrlKey && e.key === '/') {
                 e.preventDefault();
-                // Toggle the custom dropdown instead of focusing the select
+                if (editor) {
+                    try {
+                        const { selection } = editor;
+                        if (selection) {
+                            const domSelection = window.getSelection();
+                            if (domSelection && domSelection.rangeCount > 0) {
+                                const range = domSelection.getRangeAt(0);
+                                const rect = range.getBoundingClientRect();
+                                const dropdownHeight = 220; // Estimated height
+
+                                let top = rect.bottom;
+                                if (top + dropdownHeight > window.innerHeight) {
+                                    top = rect.top - dropdownHeight;
+                                }
+                                setDropdownPosition({ top, left: rect.left });
+                            }
+                        }
+                    } catch (error) {
+                        // Fallback if editor is not focused
+                    }
+                }
                 setShowTextStyleDropdown(true);
-                // Reset selection to first item
                 setSelectedDropdownIndex(0);
             }
         };
-
-        // Add event listener
         document.addEventListener('keydown', handleGlobalKeyDown);
-
-        // Cleanup
-        return () => {
-            document.removeEventListener('keydown', handleGlobalKeyDown);
-        };
-    }, []);
+        return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+    }, [editor]);
 
     // Handle dropdown keyboard navigation
     useEffect(() => {
@@ -2035,7 +2048,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                     className="absolute z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
                                     style={{ left: '0', top: '100%' }}
                                 >
-                                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+Shift+?)</div>
+                                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+/)</div>
                                     {textStyleOptions.map((option, index) => (
                                         <button
                                             key={index}
@@ -2043,7 +2056,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                                 dropdownItemsRef.current[index] = el;
                                                 return undefined;
                                             }}
-                                            className={`w-full text-left px-4 py-2 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
+                                            className={`w-full text-left px-4 py-1 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
                                             onClick={() => applyTextStyle(option.value)}
                                         >
                                             {option.label}

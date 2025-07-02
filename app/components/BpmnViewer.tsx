@@ -57,12 +57,6 @@ const gridStyles = `
   stroke-width: 2px !important;
 }
 
-.djs-container text {
-  font-weight: normal !important;
-  font-size: 12px !important;
-  fill: #333 !important;
-}
-
 /* Hide any bpmn.io branding */
 .bjs-powered-by {
   display: none !important;
