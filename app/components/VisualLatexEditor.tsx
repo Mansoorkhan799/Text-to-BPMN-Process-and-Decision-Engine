@@ -126,6 +126,8 @@ interface VisualLatexEditorProps {
     onContentChange?: (content: string) => void;
     editorMode?: 'code' | 'visual';
     onEditorModeChange?: (mode: 'code' | 'visual') => void;
+    isSaving?: boolean;
+    onManualSave?: () => void;
 }
 
 // Custom Slate elements rendering
@@ -1179,7 +1181,7 @@ const slateToLatex = (elements: Descendant[]): string => {
     return latex;
 };
 
-const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, onEditorModeChange }: VisualLatexEditorProps = {}) => {
+const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, onEditorModeChange, isSaving, onManualSave }: VisualLatexEditorProps = {}) => {
     // Create a Slate editor that is memorized
     const editor = useMemo(() => withHistory(withReact(createEditor())), []);
 
@@ -1233,6 +1235,12 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     // Track empty lines for list handling
     const emptyLineRef = useRef<boolean>(false);
 
+    // Add a ref to track external updates to prevent recursive loops
+    const isExternalUpdateRef = useRef<boolean>(false);
+
+    // Add a ref to track the last content to prevent unnecessary updates
+    const lastContentRef = useRef<string>('');
+
     // Add a ref to the text style dropdown
     const textStyleDropdownRef = useRef<HTMLSelectElement>(null);
 
@@ -1250,7 +1258,9 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         { value: 'heading-4', label: 'Subsubsection', className: 'font-semibold text-sm' },
         { value: 'paragraph-specific', label: 'Paragraph', className: 'font-medium text-sm' },
         { value: 'subparagraph-specific', label: 'Subparagraph', className: 'font-medium text-xs' },
-        { value: 'equation', label: 'Equation', className: 'font-mono text-sm' }
+        { value: 'equation', label: 'Equation', className: 'font-mono text-sm' },
+        { value: 'bullet-list', label: 'Bullet List', className: 'text-sm' },
+        { value: 'numbered-list', label: 'Numbered List', className: 'text-sm' }
     ];
 
     // Load MathJax if needed
@@ -1272,8 +1282,13 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     useEffect(() => {
         if (initialLatexContent) {
             console.log('VisualLatexEditor: initialLatexContent prop changed, updating editor');
+            isExternalUpdateRef.current = true; // Mark this as an external update
             const newValue = latexToSlate(initialLatexContent);
             setValue(newValue);
+            // Reset the flag after a longer delay to ensure the state update completes
+            setTimeout(() => {
+                isExternalUpdateRef.current = false;
+            }, 200);
         }
     }, [initialLatexContent]);
 
@@ -1286,13 +1301,24 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     // Update LaTeX code when content changes
     useEffect(() => {
         const latex = slateToLatex(value);
+        console.log('VisualLatexEditor: slateToLatex result:', latex.substring(0, 100) + '...');
         setLatexCode(latex);
 
-        // Call the onContentChange prop if provided
-        if (onContentChange) {
+        // Call the onContentChange prop if provided, but only if this is not an external update
+        // and the content has actually changed
+        if (onContentChange && !isExternalUpdateRef.current && latex !== lastContentRef.current) {
+            console.log('VisualLatexEditor calling onContentChange with:', latex.substring(0, 100) + '...');
+            lastContentRef.current = latex;
             onContentChange(latex);
+        } else if (isExternalUpdateRef.current) {
+            console.log('VisualLatexEditor skipping onContentChange due to external update');
+            lastContentRef.current = latex; // Update the ref even for external updates
+        } else if (latex === lastContentRef.current) {
+            console.log('VisualLatexEditor skipping onContentChange due to no content change');
+        } else {
+            console.log('VisualLatexEditor onContentChange prop is not provided');
         }
-    }, [value, onContentChange]);
+    }, [value]); // Removed onContentChange dependency to prevent recursive loops
 
     // Compile the document and update the preview when autoCompile is enabled
     useEffect(() => {
@@ -1344,13 +1370,13 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                 case 'ArrowDown':
                     e.preventDefault();
                     setSelectedDropdownIndex(prev =>
-                        prev < textStyleOptions.length - 1 ? prev + 1 : prev
+                        prev < textStyleOptions.length - 1 ? prev + 1 : 0
                     );
                     break;
                 case 'ArrowUp':
                     e.preventDefault();
                     setSelectedDropdownIndex(prev =>
-                        prev > 0 ? prev - 1 : prev
+                        prev > 0 ? prev - 1 : textStyleOptions.length - 1
                     );
                     break;
                 case 'Enter':
@@ -1373,7 +1399,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         return () => {
             document.removeEventListener('keydown', handleDropdownKeyDown);
         };
-    }, [showTextStyleDropdown, selectedDropdownIndex]);
+    }, [showTextStyleDropdown, selectedDropdownIndex, textStyleOptions.length]);
 
     // Focus the selected item when selectedDropdownIndex changes
     useEffect(() => {
@@ -1387,7 +1413,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         if (showTextStyleDropdown) {
             dropdownItemsRef.current = Array(textStyleOptions.length).fill(null);
         }
-    }, [showTextStyleDropdown]);
+    }, [showTextStyleDropdown, textStyleOptions.length]);
 
     // Handle click outside to close the dropdown
     useEffect(() => {
@@ -1408,6 +1434,16 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
 
     // Function to apply text style from custom dropdown
     const applyTextStyle = (style: string) => {
+        if (style === 'bullet-list') {
+            insertList('bullet-list');
+            setShowTextStyleDropdown(false);
+            return;
+        }
+        if (style === 'numbered-list') {
+            insertList('numbered-list');
+            setShowTextStyleDropdown(false);
+            return;
+        }
         toggleBlock(style as CustomElement['type']);
         setShowTextStyleDropdown(false);
     };
@@ -1808,6 +1844,14 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     // Style dropdown options
     const handleTextStyleChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const style = e.target.value;
+        if (style === 'bullet-list') {
+            insertList('bullet-list');
+            return;
+        }
+        if (style === 'numbered-list') {
+            insertList('numbered-list');
+            return;
+        }
         switch (style) {
             case 'paragraph':
                 toggleBlock('paragraph');
@@ -2032,6 +2076,8 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                     <option value="paragraph-specific">Paragraph</option>
                                     <option value="subparagraph-specific">Subparagraph</option>
                                     <option value="equation">Equation</option>
+                                    <option value="bullet-list">Bullet List</option>
+                                    <option value="numbered-list">Numbered List</option>
                                 </select>
                                 {/* Dropdown arrow */}
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
@@ -2205,6 +2251,14 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                             />
                         </div>
 
+                        {/* Auto-save indicator */}
+                        {isSaving && (
+                            <div className="flex items-center space-x-2 text-green-400 text-sm">
+                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                <span>Auto-saving...</span>
+                            </div>
+                        )}
+
                         <button
                             onClick={compileDocument}
                             className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center space-x-1"
@@ -2213,6 +2267,18 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                             <FaPlay size={12} />
                             <span>Compile</span>
                         </button>
+
+                        {/* Manual save button */}
+                        {onManualSave && (
+                            <button
+                                onClick={onManualSave}
+                                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center space-x-1"
+                                disabled={isSaving}
+                            >
+                                <FaFileAlt size={12} />
+                                <span>Save</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>

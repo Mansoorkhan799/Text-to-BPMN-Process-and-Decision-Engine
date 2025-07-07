@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { Tree } from 'react-arborist';
 import { 
   HiFolder, 
@@ -17,6 +17,7 @@ import {
 } from 'react-icons/hi';
 import { toast } from 'react-hot-toast';
 import { saveProject, getProjectById, deleteProject, getSavedProjects, BpmnProject } from '../utils/projectStorage';
+import { saveBpmnFileTree, getBpmnFileTree, migrateProjectsToFileTree, FileTreeNode } from '../utils/fileTreeStorage';
 import { v4 as uuidv4 } from 'uuid';
 
 interface User {
@@ -26,14 +27,8 @@ interface User {
   role?: string;
 }
 
-interface FileNode {
-  id: string;
-  name: string;
-  type: 'folder' | 'file';
-  children?: FileNode[];
+interface FileNode extends FileTreeNode {
   projectData?: BpmnProject;
-  parentId?: string;
-  path: string;
 }
 
 interface BpmnFileTreeProps {
@@ -64,58 +59,53 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
   const [editingName, setEditingName] = useState('');
   const uploadInputRef = useRef<HTMLInputElement>(null);
 
-  // Convert flat project list to hierarchical file tree
-  const buildFileTree = useCallback((projects: BpmnProject[]): FileNode[] => {
-    const rootFolders: { [key: string]: FileNode } = {};
-    const allNodes: { [key: string]: FileNode } = {};
-
-    // Create root folders for different categories
-    const categories = {
-      'My Projects': projects.filter(p => p.createdBy === user?.id),
-      'Shared Projects': projects.filter(p => p.createdBy !== user?.id && p.role !== 'admin'),
-      'Admin Projects': projects.filter(p => p.role === 'admin')
-    };
-
-    Object.entries(categories).forEach(([categoryName, categoryProjects]) => {
-      if (categoryProjects.length > 0) {
-        const folderId = `folder-${categoryName.toLowerCase().replace(/\s+/g, '-')}`;
-        const folder: FileNode = {
-          id: folderId,
-          name: categoryName,
-          type: 'folder',
-          children: [],
-          path: categoryName
-        };
-        rootFolders[folderId] = folder;
-        allNodes[folderId] = folder;
-
-        // Add projects to this folder
-        categoryProjects.forEach(project => {
-          const fileNode: FileNode = {
-            id: project.id,
-            name: project.name,
-            type: 'file',
-            projectData: project,
-            parentId: folderId,
-            path: `${categoryName}/${project.name}`
-          };
-          folder.children!.push(fileNode);
-          allNodes[project.id] = fileNode;
-        });
-      }
-    });
-
-    return Object.values(rootFolders);
-  }, [user]);
+  useLayoutEffect(() => {
+    if (typeof window !== 'undefined') {
+      const folderInputs = document.querySelectorAll('input[type="file"][webkitdirectory]');
+      folderInputs.forEach(input => {
+        (input as any).webkitdirectory = true;
+        (input as any).directory = true;
+      });
+    }
+  }, []);
 
   // Load projects and build file tree
   const loadFileTree = useCallback(() => {
     if (!user) return;
     
-    const projects = getSavedProjects(user.id, user.role);
-    const tree = buildFileTree(projects);
-    setFileTree(tree);
-  }, [user, buildFileTree]);
+    // First try to get the saved file tree structure
+    let savedTree = getBpmnFileTree(user.id, user.role);
+    
+    // If no saved tree exists, migrate from existing projects
+    if (savedTree.length === 0) {
+      const projects = getSavedProjects(user.id, user.role);
+      savedTree = migrateProjectsToFileTree(projects, user.id, user.role, 'bpmn');
+      // Save the migrated tree
+      if (savedTree.length > 0) {
+        saveBpmnFileTree(savedTree, user.id, user.role);
+      }
+    }
+    
+    // Update projectData in the tree with the latest data from storage
+    const updateProjectData = (nodes: FileNode[]): FileNode[] => {
+      return nodes.map(node => {
+        if (node.type === 'file' && node.projectData) {
+          // Fetch the complete project data from storage
+          const completeProject = getProjectById(node.projectData.id, user.id, user.role);
+          if (completeProject) {
+            return { ...node, projectData: completeProject };
+          }
+        }
+        if (node.children) {
+          return { ...node, children: updateProjectData(node.children) };
+        }
+        return node;
+      });
+    };
+    
+    const updatedTree = updateProjectData(savedTree);
+    setFileTree(updatedTree);
+  }, [user]);
 
   useEffect(() => {
     loadFileTree();
@@ -141,7 +131,14 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
   // Handle node click
   const handleNodeClick = (node: FileNode) => {
     if (node.type === 'file' && node.projectData) {
-      onProjectSelect(node.projectData);
+      // Fetch the complete project data from storage to ensure we have the latest XML content
+      const completeProject = getProjectById(node.projectData.id, user?.id, user?.role);
+      if (completeProject) {
+        onProjectSelect(completeProject);
+      } else {
+        // Fallback to the project data in the node if storage fetch fails
+        onProjectSelect(node.projectData);
+      }
     }
   };
 
@@ -192,7 +189,9 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
           return node;
         });
       };
-      return updateNode(prev);
+      const updatedTree = updateNode(prev);
+      saveBpmnFileTree(updatedTree, user?.id, user?.role);
+      return updatedTree;
     });
 
     setEditingNode(null);
@@ -219,7 +218,11 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
     if (node.type === 'file' && node.projectData) {
       if (confirm(`Are you sure you want to delete "${node.name}"?`)) {
         deleteProject(node.projectData.id, user?.id, user?.role);
-        setFileTree(prev => removeNodeById(prev, node.id));
+        setFileTree(prev => {
+          const updatedTree = removeNodeById(prev, node.id);
+          saveBpmnFileTree(updatedTree, user?.id, user?.role);
+          return updatedTree;
+        });
         toast.success('Project deleted successfully!');
       }
     } else if (node.type === 'folder') {
@@ -233,7 +236,11 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
           }
         };
         deleteFilesRecursively(node);
-        setFileTree(prev => removeNodeById(prev, node.id));
+        setFileTree(prev => {
+          const updatedTree = removeNodeById(prev, node.id);
+          saveBpmnFileTree(updatedTree, user?.id, user?.role);
+          return updatedTree;
+        });
         toast.success('Folder deleted successfully!');
       }
     }
@@ -292,26 +299,32 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
       id: uuidv4(),
       name,
       type: 'folder',
-      children: [],
+      children: [] as FileNode[],
       path: name
     };
-    setFileTree(prev => [...prev, newFolder]);
+    setFileTree(prev => {
+      const updatedTree = [...prev, newFolder];
+      saveBpmnFileTree(updatedTree, user?.id, user?.role);
+      return updatedTree;
+    });
     toast.success(`Folder '${name}' created!`);
   };
 
-  const createNewBpmnFile = () => {
-    if (!contextMenu.node) return;
+  const createNewBpmnFile = (folderNode?: FileNode) => {
+    const targetNode = folderNode || contextMenu.node;
+    if (!targetNode) return;
     const fileName = prompt('Enter BPMN file name:');
     if (!fileName?.trim()) return;
 
     setFileTree(prev => {
       const addFileToFolder = (nodes: FileNode[]): FileNode[] =>
         nodes.map(node => {
-          if (node.id === contextMenu.node!.id && node.type === 'folder') {
+          if (node.id === targetNode.id && node.type === 'folder') {
             const newFile: FileNode = {
               id: uuidv4(),
               name: fileName,
               type: 'file',
+              children: [] as FileNode[],
               parentId: node.id,
               path: `${node.path}/${fileName}`,
               projectData: {
@@ -326,12 +339,15 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
               ...node,
               children: node.children ? [...node.children, newFile] : [newFile]
             };
-          } else if (node.children) {
+          } else if (node.children && Array.isArray(node.children)) {
             return { ...node, children: addFileToFolder(node.children) };
+          } else {
+            return { ...node, children: [] };
           }
-          return node;
         });
-      return addFileToFolder(prev);
+      const updatedTree = addFileToFolder(prev);
+      saveBpmnFileTree(updatedTree, user?.id, user?.role);
+      return updatedTree;
     });
     toast.success(`BPMN file "${fileName}" created successfully!`);
     closeContextMenu();
@@ -387,7 +403,9 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
         });
       };
 
-      return insertAt(treeWithoutDragged, parentId, draggedNodes, index);
+      const updatedTree = insertAt(treeWithoutDragged, parentId, draggedNodes, index);
+      saveBpmnFileTree(updatedTree, user?.id, user?.role);
+      return updatedTree;
     });
   };
 
@@ -460,8 +478,6 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
               <label className="text-xs text-blue-600 hover:text-blue-800 underline cursor-pointer">
                 <input
                   type="file"
-                  webkitdirectory="true"
-                  directory="true"
                   multiple
                   className="hidden"
                   onChange={async (e) => {
@@ -470,33 +486,39 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
                     // Simulate import: create a folder with the name of the first file's directory
                     const firstFile = files[0];
                     const folderPath = firstFile.webkitRelativePath.split('/')[0];
-                    const newFolder = {
-                      id: uuidv4(),
-                      name: folderPath,
-                      type: 'folder',
-                      children: [],
-                      path: folderPath
-                    };
-                    // Add files as children
-                    for (const file of files) {
-                      const fileName = file.name;
-                      newFolder.children.push({
-                        id: uuidv4(),
-                        name: fileName,
-                        type: 'file',
-                        parentId: newFolder.id,
-                        path: `${folderPath}/${fileName}`,
-                        projectData: {
+                                            const newFolder: FileNode = {
                           id: uuidv4(),
-                          name: fileName,
-                          lastEdited: new Date().toISOString().split('T')[0],
-                          createdBy: user?.id,
-                          role: user?.role
-                        }
-                      });
-                    }
-                    setFileTree(prev => [...prev, newFolder]);
-                    toast.success(`Folder '${folderPath}' imported!`);
+                          name: folderPath,
+                          type: 'folder',
+                          children: [] as FileNode[],
+                          path: folderPath
+                        };
+                        // Add files as children
+                        Array.from(files).forEach(file => {
+                          const fileName = file.name;
+                          const fileNode: FileNode = {
+                            id: uuidv4(),
+                            name: fileName,
+                            type: 'file',
+                            children: [] as FileNode[],
+                            parentId: newFolder.id,
+                            path: `${folderPath}/${fileName}`,
+                            projectData: {
+                              id: uuidv4(),
+                              name: fileName,
+                              lastEdited: new Date().toISOString().split('T')[0],
+                              createdBy: user?.id,
+                              role: user?.role
+                            }
+                          };
+                          newFolder.children!.push(fileNode);
+                                                });
+                        setFileTree(prev => {
+                          const updatedTree = [...prev, newFolder];
+                          saveBpmnFileTree(updatedTree, user?.id, user?.role);
+                          return updatedTree;
+                        });
+                        toast.success(`Folder '${folderPath}' imported!`);
                   }}
                 />
                 Import Folder
@@ -595,6 +617,26 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
                       </button>
                     </>
                   )}
+                  {node.data.type === 'folder' && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (node.data && node.data.type === 'folder') {
+                          setContextMenu({
+                            show: false,
+                            x: 0,
+                            y: 0,
+                            node: node.data
+                          });
+                          createNewBpmnFile(node.data);
+                        }
+                      }}
+                      className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
+                      title="Add BPMN File"
+                    >
+                      <HiPlus className="w-3 h-3" />
+                    </button>
+                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -640,7 +682,17 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
           {contextMenu.node?.type === 'folder' && (
             <>
               <button
-                onClick={createNewBpmnFile}
+                onClick={() => {
+                  if (contextMenu.node && contextMenu.node.type === 'folder') {
+                    setContextMenu({
+                      show: false,
+                      x: 0,
+                      y: 0,
+                      node: contextMenu.node
+                    });
+                    createNewBpmnFile(contextMenu.node);
+                  }
+                }}
                 className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center"
               >
                 <HiPlus className="w-4 h-4 mr-2" />

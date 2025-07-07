@@ -12,6 +12,7 @@ import { toast } from 'react-hot-toast';
 import { XMLParser } from 'fast-xml-parser';
 import * as XLSX from 'xlsx';
 import dynamic from 'next/dynamic';
+import { HiFolder } from 'react-icons/hi';
 // Add the DuplicateWarningModal import
 const DuplicateWarningModal = dynamic(() => import('./DuplicateWarningModal'), { ssr: false });
 // Add the BpmnFileTree import
@@ -139,6 +140,8 @@ const BpmnEditor = () => {
     const [hasChanges, setHasChanges] = useState(false);
     const [showFileTree, setShowFileTree] = useState(true);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // Add state for file tree refresh
+    const [fileTreeRefreshTrigger, setFileTreeRefreshTrigger] = useState(0);
 
     // Fetch current user on component mount
     useEffect(() => {
@@ -292,6 +295,11 @@ const BpmnEditor = () => {
         };
     }, [stylesLoaded]);
 
+    // Function to refresh file tree
+    const refreshFileTree = () => {
+        setFileTreeRefreshTrigger(prev => prev + 1);
+    };
+
     // Function to save the current diagram as a project with improved functionality
     const handleSaveProject = async () => {
         if (!modeler) return;
@@ -333,6 +341,9 @@ const BpmnEditor = () => {
             }
 
             toast.success(`Project "${projectName}" saved successfully!`);
+
+            // Refresh the file tree to show updated data
+            refreshFileTree();
 
             setTimeout(() => {
                 setIsSaving(false);
@@ -676,6 +687,9 @@ const BpmnEditor = () => {
         }
 
         toast.success('Project renamed successfully!');
+        
+        // Refresh the file tree to show updated data
+        refreshFileTree();
     };
 
     // Function to cancel renaming
@@ -722,6 +736,22 @@ const BpmnEditor = () => {
         };
     }, []);
 
+    // Add keyboard shortcut for Ctrl+S to save project
+    useEffect(() => {
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Check if Ctrl+S is pressed and not in rename mode
+            if ((event.ctrlKey || event.metaKey) && event.key === 's' && !isRenaming) {
+                event.preventDefault(); // Prevent browser's default save behavior
+                handleSaveProject();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [modeler, projectName, projectId, user, isRenaming]); // Add isRenaming to dependencies
+
     // Function to import JSON file
     const handleJsonImport = async (file: File) => {
         if (!modeler) return;
@@ -730,7 +760,7 @@ const BpmnEditor = () => {
             setImportingFile(true);
 
             // Read the file
-            const fileContent = await readFileAsText(file);
+            const fileContent = await file.text();
 
             // Parse JSON
             const jsonData = JSON.parse(fileContent);
@@ -1007,7 +1037,7 @@ const BpmnEditor = () => {
             setImportingFile(true);
 
             // Read the file
-            const fileContent = await readFileAsText(file);
+            const fileContent = await file.text();
 
             // Import the XML directly into the modeler
             await modeler.importXML(fileContent);
@@ -1973,8 +2003,8 @@ const BpmnEditor = () => {
                 xml
             }, user?.id, user?.role);
             toast.success(`File "${file.name}" uploaded as project!`);
-            // Optionally, refresh the file tree by toggling showFileTree
-            setShowFileTree(false); setTimeout(() => setShowFileTree(true), 10);
+            // Refresh the file tree to show the new project
+            refreshFileTree();
         } catch (err) {
             toast.error('Failed to upload file: ' + ((err as Error)?.message || err));
         }
@@ -1986,6 +2016,7 @@ const BpmnEditor = () => {
             {showFileTree && !sidebarCollapsed && (
                 <div className="relative w-64 flex-shrink-0 bg-white border-r">
                     <BpmnFileTree
+                        key={fileTreeRefreshTrigger}
                         user={user}
                         onProjectSelect={handleProjectSelect}
                         onNewProject={handleNewProject}
@@ -2008,21 +2039,24 @@ const BpmnEditor = () => {
             {/* Expand Arrow when sidebar is collapsed */}
             {sidebarCollapsed && (
                 <div className="absolute top-1/2 left-0 z-20 flex flex-col items-center" style={{ transform: 'translateY(-50%)' }}>
-                    <button
-                        onClick={() => setSidebarCollapsed(false)}
-                        className="flex flex-col items-center justify-center bg-white border border-gray-300 rounded-r-lg shadow px-2 py-3 hover:bg-gray-100 focus:outline-none"
-                        title="Expand Sidebar"
-                        style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)', minHeight: '64px' }}
-                    >
-                        {/* Folder Icon */}
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-500 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h3.172a2 2 0 011.414.586l1.828 1.828A2 2 0 0012.828 8H19a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-                        </svg>
-                        {/* Arrow Icon */}
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                    </button>
+                    <div className="flex flex-col items-center justify-center bg-white rounded-xl border border-gray-200 shadow-md px-3 py-4" style={{ minWidth: 48 }}>
+                        <button
+                            className="flex items-center justify-center w-8 h-8 rounded focus:outline-none hover:bg-gray-100 mb-2"
+                            onClick={() => setSidebarCollapsed(false)}
+                            aria-label="Expand sidebar"
+                        >
+                            <HiFolder className="w-7 h-7 text-gray-500" />
+                        </button>
+                        <button
+                            className="flex items-center justify-center w-6 h-6 rounded focus:outline-none hover:bg-gray-100"
+                            onClick={() => setSidebarCollapsed(false)}
+                            aria-label="Expand sidebar"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             )}
             <div className={`flex flex-1 flex-col overflow-hidden${sidebarCollapsed ? ' ml-14' : ''}`}>
@@ -2225,7 +2259,7 @@ const BpmnEditor = () => {
                             onClick={handleSaveProject}
                             disabled={downloading}
                             className={`inline-flex items-center justify-center p-2 rounded-md ${downloading ? 'text-green-400' : 'text-green-600 hover:bg-green-50'} transition-colors focus:outline-none`}
-                            title="Save Project"
+                            title="Save Project (Ctrl+S)"
                         >
                             {downloading ? (
                                 <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -2238,6 +2272,14 @@ const BpmnEditor = () => {
                                 </svg>
                             )}
                         </button>
+                        
+                        {/* Save status indicator */}
+                        {isSaving && (
+                            <div className="flex items-center text-green-600 text-sm">
+                                <div className="w-2 h-2 bg-green-600 rounded-full animate-pulse mr-1"></div>
+                                <span>Saving...</span>
+                            </div>
+                        )}
 
                         <div className="h-6 border-l border-gray-300 mx-1"></div>
 

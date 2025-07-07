@@ -1,5 +1,18 @@
 'use client';
 
+// LaTeX Editor with \input{} and \include{} support
+// 
+// This editor supports LaTeX \input{} and \include{} commands that allow you to:
+// - \input{filename} - Include content from another .tex file
+// - \include{filename} - Include content from another .tex file with page break
+// 
+// Usage examples:
+// \input{chapter1}     - Includes content from chapter1.tex
+// \include{appendix}   - Includes content from appendix.tex with page break
+// \input{chapters/intro} - Includes content from intro.tex in chapters folder
+//
+// The files must exist in your LaTeX project file tree to be included.
+
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import katex from 'katex';
@@ -16,6 +29,7 @@ import html2canvas from 'html2canvas';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, TableCell, TableRow, Table, AlignmentType, ImageRun, BorderStyle, WidthType } from 'docx';
 import mammoth from 'mammoth';
 import EditorModeSwitch from './ui/EditorModeSwitch';
+import { LatexProject } from '../utils/latexProjectStorage';
 
 // Add MathJax declaration for TypeScript
 declare global {
@@ -46,9 +60,12 @@ interface LatexEditorProps {
     onContentChange?: (content: string) => void;
     editorMode?: 'code' | 'visual';
     onEditorModeChange?: (mode: 'code' | 'visual') => void;
+    isSaving?: boolean;
+    onManualSave?: () => void;
+    user?: { id: string; role: string }; // Add user prop for file access
 }
 
-const LatexEditor = ({ initialContent, onContentChange, editorMode = 'code', onEditorModeChange }: LatexEditorProps = {}) => {
+const LatexEditor = ({ initialContent, onContentChange, editorMode = 'code', onEditorModeChange, isSaving, onManualSave, user }: LatexEditorProps = {}) => {
     const [latexContent, setLatexContent] = useState<string>(
         initialContent ||
         `\\documentclass{article}
@@ -57,7 +74,7 @@ const LatexEditor = ({ initialContent, onContentChange, editorMode = 'code', onE
 \\usepackage{graphicx}
 \\usepackage{hyperref}
 
-\\title{LaTeX Document}
+\\title{LaTeX Document with Input/Include Support}
 \\author{Mansoor Khan}
 \\date{\\today}
 
@@ -66,7 +83,19 @@ const LatexEditor = ({ initialContent, onContentChange, editorMode = 'code', onE
 \\maketitle
 
 \\section{Introduction}
-This is a sample LaTeX document. You can edit it in the editor.
+This is a sample LaTeX document that demonstrates \\input{} and \\include{} functionality.
+
+\\section{Including Other Files}
+You can include content from other .tex files using:
+
+\\subsection{Using \\input{}}
+\\input{chapter1}
+
+\\subsection{Using \\include{}}
+\\include{appendix}
+
+\\section{Conclusion}
+This demonstrates how the editor processes \\input{} and \\include{} commands.
 
 \\end{document}`
     );
@@ -100,7 +129,9 @@ This is a sample LaTeX document. You can edit it in the editor.
         { value: 'subsubsection', label: 'Subsubsection', className: 'font-semibold text-sm' },
         { value: 'paragraph', label: 'Paragraph', className: 'font-medium text-sm' },
         { value: 'subparagraph', label: 'Subparagraph', className: 'font-medium text-xs' },
-        { value: 'equation', label: 'Equation', className: 'font-mono text-sm' }
+        { value: 'equation', label: 'Equation', className: 'font-mono text-sm' },
+        { value: 'bullet-list', label: 'Bullet List', className: 'text-sm' },
+        { value: 'numbered-list', label: 'Numbered List', className: 'text-sm' }
     ];
 
     // Update content when initialContent prop changes
@@ -120,6 +151,129 @@ This is a sample LaTeX document. You can edit it in the editor.
             compileLatex();
         }
     }, [latexContent, autoCompile]);
+
+    // Add function to get file content by name
+    const getFileContentByName = (fileName: string): string | null => {
+        if (!user) return null;
+        
+        try {
+            // Import the necessary functions
+            const { getSavedLatexProjects } = require('../utils/latexProjectStorage');
+            const { getLatexFileTree } = require('../utils/fileTreeStorage');
+            
+            // Get all projects for the user
+            const projects = getSavedLatexProjects(user.id, user.role);
+            const fileTree = getLatexFileTree(user.id, user.role);
+            
+            // First try to find by exact filename match
+            let targetProject = projects.find((p: LatexProject) => p.name === fileName);
+            
+            // If not found, try without .tex extension
+            if (!targetProject && !fileName.endsWith('.tex')) {
+                targetProject = projects.find((p: LatexProject) => p.name === `${fileName}.tex`);
+            }
+            
+            // If still not found, try with .tex extension
+            if (!targetProject && fileName.endsWith('.tex')) {
+                targetProject = projects.find((p: LatexProject) => p.name === fileName.replace('.tex', ''));
+            }
+            
+            // If found, return the content
+            if (targetProject && targetProject.content) {
+                console.log(`Found file ${fileName} with content length: ${targetProject.content.length}`);
+                return targetProject.content;
+            }
+            
+            console.log(`File ${fileName} not found in user's projects`);
+            return null;
+        } catch (error) {
+            console.error('Error getting file content:', error);
+            return null;
+        }
+    };
+
+    // Function to process \input{} and \include{} commands
+    const processInputIncludeCommands = (content: string): string => {
+        let processedContent = content;
+        
+        // Process \input{} commands
+        processedContent = processedContent.replace(
+            /\\input{([^}]+)}/g,
+            (match, fileName) => {
+                console.log(`Processing \\input{${fileName}}`);
+                const fileContent = getFileContentByName(fileName);
+                
+                if (fileContent) {
+                    // Extract content between \begin{document} and \end{document} if it exists
+                    const documentMatch = fileContent.match(/\\begin{document}([\s\S]*?)\\end{document}/);
+                    if (documentMatch) {
+                        console.log(`Including document content from ${fileName}`);
+                        return documentMatch[1].trim();
+                    } else {
+                        // If no document environment, return the whole content
+                        console.log(`Including full content from ${fileName}`);
+                        return fileContent;
+                    }
+                } else {
+                    console.log(`File ${fileName} not found for \\input{}`);
+                    return `<div class="error" style="background-color: #fee; border: 1px solid #fcc; padding: 8px; margin: 8px 0; border-radius: 4px; color: #c33;">
+                        <strong>Error:</strong> File '${fileName}' not found for \\input{} command.<br>
+                        <small>Make sure the file exists in your LaTeX project file tree.</small>
+                    </div>`;
+                }
+            }
+        );
+        
+        // Process \include{} commands (same as \input{} but with page break)
+        processedContent = processedContent.replace(
+            /\\include{([^}]+)}/g,
+            (match, fileName) => {
+                console.log(`Processing \\include{${fileName}}`);
+                const fileContent = getFileContentByName(fileName);
+                
+                if (fileContent) {
+                    // Extract content between \begin{document} and \end{document} if it exists
+                    const documentMatch = fileContent.match(/\\begin{document}([\s\S]*?)\\end{document}/);
+                    if (documentMatch) {
+                        console.log(`Including document content from ${fileName} with page break`);
+                        return documentMatch[1].trim() + '\n\n<div style="page-break-after: always;"></div>\n\n';
+                    } else {
+                        // If no document environment, return the whole content with page break
+                        console.log(`Including full content from ${fileName} with page break`);
+                        return fileContent + '\n\n<div style="page-break-after: always;"></div>\n\n';
+                    }
+                } else {
+                    console.log(`File ${fileName} not found for \\include{}`);
+                    return `<div class="error" style="background-color: #fee; border: 1px solid #fcc; padding: 8px; margin: 8px 0; border-radius: 4px; color: #c33;">
+                        <strong>Error:</strong> File '${fileName}' not found for \\include{} command.<br>
+                        <small>Make sure the file exists in your LaTeX project file tree.</small>
+                    </div>`;
+                }
+            }
+        );
+        
+        return processedContent;
+    };
+
+    // Process LaTeX content more simply by treating each section as a separate block
+    const processLatexSectionsSimple = (content: string) => {
+        // Process section commands
+        const sectionRegex = /\\section{([^}]+)}/g;
+        const subsectionRegex = /\\subsection{([^}]+)}/g;
+        const subsubsectionRegex = /\\subsubsection{([^}]+)}/g;
+        const paragraphRegex = /\\paragraph{([^}]+)}/g;
+        const subparagraphRegex = /\\subparagraph{([^}]+)}/g;
+
+        // Process sections
+        let processedContent = content
+            .replace(sectionRegex, '<h2>$1</h2>')
+            .replace(subsectionRegex, '<h3>$1</h3>')
+            .replace(subsubsectionRegex, '<h4>$1</h4>')
+            .replace(paragraphRegex, '<h5>$1</h5>')
+            .replace(subparagraphRegex, '<h6>$1</h6>');
+
+        return processedContent;
+    };
 
     const compileLatex = () => {
         try {
@@ -143,6 +297,9 @@ This is a sample LaTeX document. You can edit it in the editor.
                 hasTitleSection = true;
                 processedContent = processedContent.replace('\\maketitle', '');
             }
+
+            // Process \input{} and \include{} commands BEFORE other processing
+            processedContent = processInputIncludeCommands(processedContent);
 
             // Process matrices
             processedContent = processedContent.replace(
@@ -496,32 +653,16 @@ This is a sample LaTeX document. You can edit it in the editor.
         return processedContent;
     };
 
-    // Process LaTeX content more simply by treating each section as a separate block
-    const processLatexSectionsSimple = (content: string) => {
-        // Process section commands
-        const sectionRegex = /\\section{([^}]+)}/g;
-        const subsectionRegex = /\\subsection{([^}]+)}/g;
-        const subsubsectionRegex = /\\subsubsection{([^}]+)}/g;
-        const paragraphRegex = /\\paragraph{([^}]+)}/g;
-        const subparagraphRegex = /\\subparagraph{([^}]+)}/g;
-
-        // Process sections
-        let processedContent = content
-            .replace(sectionRegex, '<h2>$1</h2>')
-            .replace(subsectionRegex, '<h3>$1</h3>')
-            .replace(subsubsectionRegex, '<h4>$1</h4>')
-            .replace(paragraphRegex, '<h5>$1</h5>')
-            .replace(subparagraphRegex, '<h6>$1</h6>');
-
-        return processedContent;
-    };
-
     const handleEditorChange = (value: string | undefined) => {
+        console.log('LatexEditor handleEditorChange called with:', value?.substring(0, 100) + '...');
         if (value !== undefined) {
             setLatexContent(value);
             // Call the onContentChange prop if provided
             if (onContentChange) {
+                console.log('LatexEditor calling onContentChange with:', value.substring(0, 100) + '...');
                 onContentChange(value);
+            } else {
+                console.log('LatexEditor onContentChange prop is not provided');
             }
         }
     };
@@ -1418,6 +1559,12 @@ This is a sample LaTeX document. You can edit it in the editor.
                 break;
             case 'equation':
                 insertTextAtCursor("$$", "$$");
+                break;
+            case 'bullet-list':
+                insertList('bullet');
+                break;
+            case 'numbered-list':
+                insertList('numbered');
                 break;
             default:
                 break;
@@ -2375,13 +2522,13 @@ ${latex}
                 case 'ArrowDown':
                     e.preventDefault();
                     setSelectedDropdownIndex(prev =>
-                        prev < textStyleOptions.length - 1 ? prev + 1 : prev
+                        prev < textStyleOptions.length - 1 ? prev + 1 : 0
                     );
                     break;
                 case 'ArrowUp':
                     e.preventDefault();
                     setSelectedDropdownIndex(prev =>
-                        prev > 0 ? prev - 1 : prev
+                        prev > 0 ? prev - 1 : textStyleOptions.length - 1
                     );
                     break;
                 case 'Enter':
@@ -2404,7 +2551,7 @@ ${latex}
         return () => {
             document.removeEventListener('keydown', handleDropdownKeyDown);
         };
-    }, [showTextStyleDropdown, selectedDropdownIndex]);
+    }, [showTextStyleDropdown, selectedDropdownIndex, textStyleOptions.length]);
 
     // Focus the selected item when selectedDropdownIndex changes
     useEffect(() => {
@@ -2418,7 +2565,7 @@ ${latex}
         if (showTextStyleDropdown) {
             dropdownItemsRef.current = Array(textStyleOptions.length).fill(null);
         }
-    }, [showTextStyleDropdown]);
+    }, [showTextStyleDropdown, textStyleOptions.length]);
 
     // Handle click outside to close the dropdown
     useEffect(() => {
@@ -2464,6 +2611,12 @@ ${latex}
                 break;
             case 'equation':
                 insertEquation();
+                break;
+            case 'bullet-list':
+                insertList('bullet');
+                break;
+            case 'numbered-list':
+                insertList('numbered');
                 break;
         }
     };
@@ -2552,6 +2705,8 @@ ${latex}
                                     <option value="paragraph">Paragraph</option>
                                     <option value="subparagraph">Subparagraph</option>
                                     <option value="equation">Equation</option>
+                                    <option value="bullet-list">Bullet List</option>
+                                    <option value="numbered-list">Numbered List</option>
                                 </select>
                                 {/* Dropdown arrow */}
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
@@ -2741,6 +2896,14 @@ ${latex}
                             />
                         </div>
 
+                        {/* Auto-save indicator */}
+                        {isSaving && (
+                            <div className="flex items-center space-x-2 text-green-400 text-sm">
+                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                                <span>Auto-saving...</span>
+                            </div>
+                        )}
+
                         <button
                             onClick={compileLatex}
                             className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition flex items-center space-x-1"
@@ -2749,6 +2912,18 @@ ${latex}
                             <FaPlay size={12} />
                             <span>Compile</span>
                         </button>
+
+                        {/* Manual save button */}
+                        {onManualSave && (
+                            <button
+                                onClick={onManualSave}
+                                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center space-x-1"
+                                disabled={isSaving}
+                            >
+                                <FaFileAlt size={12} />
+                                <span>Save</span>
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
