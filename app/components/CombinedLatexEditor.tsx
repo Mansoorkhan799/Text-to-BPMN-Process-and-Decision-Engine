@@ -10,7 +10,11 @@ import { LatexProject, saveLatexProject, getSavedLatexProjects } from '../utils/
 import { getLatexFileTree, saveLatexFileTree } from '../utils/fileTreeStorage';
 import { toast } from 'react-hot-toast';
 
-const CombinedLatexEditor = () => {
+interface CombinedLatexEditorProps {
+    user?: any;
+}
+
+const CombinedLatexEditor: React.FC<CombinedLatexEditorProps> = ({ user: userProp }) => {
     // Initial content for the editor
     const initialContent = `\\documentclass{article}
 \\usepackage{amsmath}
@@ -51,7 +55,7 @@ This is a sample LaTeX document. You can edit it in the editor.
 
     // State for current project and user
     const [currentProject, setCurrentProject] = useState<LatexProject | null>(null);
-    const [user, setUser] = useState<any>(null);
+    const [user, setUser] = useState<any>(userProp || null);
 
     // Manual save functionality
     const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -312,6 +316,13 @@ This is a sample LaTeX document. You can edit it in the editor.
     useEffect(() => {
         const initializeEditor = async () => {
             try {
+                if (userProp) {
+                    setUser(userProp);
+                    setIsInitialized(true);
+                    setIsLoading(false);
+                    return;
+                }
+
                 // Get user data from localStorage
                 const userData = localStorage.getItem('user');
                 
@@ -345,7 +356,7 @@ This is a sample LaTeX document. You can edit it in the editor.
         };
 
         initializeEditor();
-    }, []);
+    }, [userProp]);
 
     // Function to load default project if needed
     const loadDefaultProjectIfNeeded = (userData: any) => {
@@ -644,12 +655,15 @@ This is a sample LaTeX document. You can edit it in the editor.
                         <LatexEditor
                             initialContent={latexContent || initialContent}
                             onContentChange={handleCodeEditorChange}
-                            key={`latex-editor-${isInitialized}`}
                             editorMode={activeEditor}
                             onEditorModeChange={handleEditorSwitch}
                             isSaving={isSaving}
                             onManualSave={handleManualSave}
                             user={user}
+                            projectId={currentProject?.id}
+                            onSaveComplete={() => {
+                                console.log('Code editor save completed');
+                            }}
                         />
                     </div>
                 )}
@@ -659,11 +673,15 @@ This is a sample LaTeX document. You can edit it in the editor.
                         <VisualLatexEditor
                             initialLatexContent={cleanLatexContent(latexContent) || initialContent}
                             onContentChange={handleVisualEditorChange}
-                            key={`visual-editor-${isInitialized}`}
                             editorMode={activeEditor}
                             onEditorModeChange={handleEditorSwitch}
                             isSaving={isSaving}
                             onManualSave={handleManualSave}
+                            projectId={currentProject?.id}
+                            user={user}
+                            onSaveComplete={() => {
+                                console.log('Visual editor save completed');
+                            }}
                         />
                     </div>
                 )}

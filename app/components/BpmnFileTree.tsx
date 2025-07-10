@@ -618,35 +618,47 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
                     </>
                   )}
                   {node.data.type === 'folder' && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (node.data && node.data.type === 'folder') {
-                          setContextMenu({
-                            show: false,
-                            x: 0,
-                            y: 0,
-                            node: node.data
-                          });
-                          createNewBpmnFile(node.data);
-                        }
-                      }}
-                      className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
-                      title="Add BPMN File"
-                    >
-                      <HiPlus className="w-3 h-3" />
-                    </button>
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startEditing(node.data);
+                        }}
+                        className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                        title="Rename"
+                      >
+                        <HiPencil className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (node.data && node.data.type === 'folder') {
+                            setContextMenu({
+                              show: false,
+                              x: 0,
+                              y: 0,
+                              node: node.data
+                            });
+                            createNewBpmnFile(node.data);
+                          }
+                        }}
+                        className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
+                        title="Add BPMN File"
+                      >
+                        <HiPlus className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteNode(node.data);
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                        title="Delete"
+                      >
+                        <HiTrash className="w-3 h-3" />
+                      </button>
+                    </>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteNode(node.data);
-                    }}
-                    className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                    title="Delete"
-                  >
-                    <HiTrash className="w-3 h-3" />
-                  </button>
                   {node.data.type === 'folder' && (
                     <button
                       onClick={(e) => {

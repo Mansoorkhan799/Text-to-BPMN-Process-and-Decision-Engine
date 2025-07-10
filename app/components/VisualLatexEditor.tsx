@@ -10,12 +10,18 @@ import {
     FaBold, FaItalic, FaList, FaPlay, FaTable, FaImage,
     FaFont, FaListOl, FaIndent, FaOutdent, FaFileAlt,
     FaHeading, FaUnderline, FaRulerHorizontal, FaCode,
-    FaFileWord, FaFileImport, FaFileUpload, FaEye
+    FaFileWord, FaFileImport, FaFileUpload, FaEye, FaHistory
 } from 'react-icons/fa';
 import { Switch } from './ui/Switch';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import EditorModeSwitch from './ui/EditorModeSwitch';
+import ChangesTracker from './ChangesTracker';
+import { 
+    addLatexProjectVersion, 
+    hasMeaningfulChanges 
+} from '../utils/latexVersions';
+import TableGridPicker from './ui/TableGridPicker';
 
 // Define custom types for Slate
 type CustomEditor = BaseEditor & ReactEditor & HistoryEditor;
@@ -128,6 +134,9 @@ interface VisualLatexEditorProps {
     onEditorModeChange?: (mode: 'code' | 'visual') => void;
     isSaving?: boolean;
     onManualSave?: () => void;
+    projectId?: string;
+    user?: { id: string; role: string; name?: string; email?: string };
+    onSaveComplete?: () => void; // Callback when save completes
 }
 
 // Custom Slate elements rendering
@@ -698,8 +707,96 @@ const latexToSlate = (latexContent: string): Descendant[] => {
             contentWithProcessedSections = contentWithProcessedSections.replace(subparagraphMatch[0], '');
         }
 
-        // Process the remaining content (paragraphs, etc.) after handling sections
-        const remainingParagraphs = contentWithProcessedSections
+        // Process tables first (before paragraphs)
+        const tableRegex = /\\begin\{table\}[\s\S]*?\\end\{table\}/g;
+        let tableMatch;
+        let lastIndex = 0;
+        const contentWithoutTables = contentWithProcessedSections;
+
+        while ((tableMatch = tableRegex.exec(contentWithProcessedSections)) !== null) {
+            const tableContent = tableMatch[0];
+            const tableStart = tableMatch.index;
+            const tableEnd = tableStart + tableContent.length;
+
+            // Process content before the table
+            const beforeTable = contentWithProcessedSections.substring(lastIndex, tableStart);
+            if (beforeTable.trim()) {
+                const beforeParagraphs = beforeTable
+                    .split(/\n\s*\n/)
+                    .map(p => p.trim())
+                    .filter(p => p.length > 0);
+                
+                beforeParagraphs.forEach(paragraph => {
+                    if (!paragraph.trim()) return;
+                    // Process as regular paragraph (existing logic will be added here)
+                    elements.push({
+                        type: 'paragraph',
+                        children: [{ text: paragraph }]
+                    });
+                });
+            }
+
+            // Parse the table
+            const tabularMatch = tableContent.match(/\\begin\{tabular\}\{([^}]*)\}([\s\S]*?)\\end\{tabular\}/);
+            if (tabularMatch) {
+                const colSpec = tabularMatch[1];
+                const tableBody = tabularMatch[2];
+                
+                // Count columns from column specification
+                const numCols = colSpec.replace(/[|]/g, '').length;
+                
+                // Parse table rows
+                const rows = tableBody.split('\\hline')
+                    .map(row => row.trim())
+                    .filter(row => row.length > 0);
+                
+                const tableRows: TableRowElement[] = [];
+                
+                rows.forEach(rowContent => {
+                    // Split by \\ to handle multiple rows between \hlines
+                    const rowParts = rowContent.split('\\\\').map(row => row.trim()).filter(row => row.length > 0);
+                    
+                    rowParts.forEach(rowPart => {
+                        const cells = rowPart.split('&').map(cell => cell.trim());
+                        const tableCells: TableCellElement[] = [];
+                        
+                        cells.forEach(cellContent => {
+                            tableCells.push({
+                                type: 'table-cell',
+                                children: [{ text: cellContent }]
+                            });
+                        });
+                        
+                        // Ensure we have the right number of cells
+                        while (tableCells.length < numCols) {
+                            tableCells.push({
+                                type: 'table-cell',
+                                children: [{ text: '' }]
+                            });
+                        }
+                        
+                        tableRows.push({
+                            type: 'table-row',
+                            children: tableCells
+                        });
+                    });
+                });
+                
+                // Create table element
+                elements.push({
+                    type: 'table',
+                    rows: tableRows.length,
+                    cols: numCols,
+                    children: tableRows
+                } as TableElement);
+            }
+            
+            lastIndex = tableEnd;
+        }
+
+        // Process the remaining content (paragraphs, etc.) after handling sections and tables
+        const remainingContent = contentWithProcessedSections.substring(lastIndex);
+        const remainingParagraphs = remainingContent
             .split(/\n\s*\n/)
             .map(p => p.trim())
             .filter(p => p.length > 0);
@@ -1167,7 +1264,42 @@ const slateToLatex = (elements: Descendant[]): string => {
                 }
                 break;
             case 'table':
-                // Table handling would go here
+                // Convert table to LaTeX tabular environment
+                body += '\\begin{table}[h!]\n  \\centering\n';
+                
+                // Determine number of columns from the first row
+                const firstRow = element.children?.[0];
+                const numCols = firstRow?.children?.length || 3;
+                
+                // Create column specification
+                let colSpec = '|';
+                for (let i = 0; i < numCols; i++) {
+                    colSpec += 'c|';
+                }
+                
+                body += `  \\begin{tabular}{${colSpec}}\n    \\hline\n`;
+                
+                // Process each row
+                element.children?.forEach((row: any, rowIndex: number) => {
+                    if (row.type === 'table-row') {
+                        body += '    ';
+                        row.children?.forEach((cell: any, cellIndex: number) => {
+                            if (cell.type === 'table-cell') {
+                                const cellContent = childrenToLatex(cell.children);
+                                body += cellContent;
+                                if (cellIndex < row.children.length - 1) {
+                                    body += ' & ';
+                                }
+                            }
+                        });
+                        body += ' \\\\\n    \\hline\n';
+                    }
+                });
+                
+                body += '  \\end{tabular}\n';
+                body += '  \\caption{Table Caption}\n';
+                body += '  \\label{tab:my_table}\n';
+                body += '\\end{table}\n\n';
                 break;
             default:
                 // Handle other element types if needed
@@ -1181,9 +1313,12 @@ const slateToLatex = (elements: Descendant[]): string => {
     return latex;
 };
 
-const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, onEditorModeChange, isSaving, onManualSave }: VisualLatexEditorProps = {}) => {
-    // Create a Slate editor that is memorized
-    const editor = useMemo(() => withHistory(withReact(createEditor())), []);
+const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, onEditorModeChange, isSaving, onManualSave, projectId, user, onSaveComplete }: VisualLatexEditorProps = {}) => {
+    // Key for forcing Slate editor re-render - declare first
+    const [editorKey, setEditorKey] = useState<number>(0);
+    
+    // Create a Slate editor that is memorized - recreate when key changes to reset all state
+    const editor = useMemo(() => withHistory(withReact(createEditor())), [editorKey]);
 
     // Process initialLatexContent if provided
     const initialValue: Descendant[] = useMemo(() => {
@@ -1204,8 +1339,18 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         ];
     }, [initialLatexContent]);
 
-    // State for editor content
-    const [value, setValue] = useState<Descendant[]>(initialValue);
+    // State for editor content - ensure it always has a valid value
+    const [value, setValue] = useState<Descendant[]>(() => {
+        if (initialValue && initialValue.length > 0) {
+            return initialValue;
+        }
+        return [
+            {
+                type: 'paragraph',
+                children: [{ text: 'Loading...' }],
+            },
+        ];
+    });
 
     // Always use dark theme
     const editorTheme = 'dark';
@@ -1250,6 +1395,31 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     const [selectedDropdownIndex, setSelectedDropdownIndex] = useState(0);
     const dropdownItemsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
+    // Changes tracker state
+    const [showChangesTracker, setShowChangesTracker] = useState(false);
+    const [lastSavedContent, setLastSavedContent] = useState<string>('');
+    const [changeTrackingEnabled, setChangeTrackingEnabled] = useState(true);
+    
+    // Table grid picker popup state
+    const [showTableGrid, setShowTableGrid] = useState(false);
+    const [tableGridPosition, setTableGridPosition] = useState<{ top: number; left: number } | null>(null);
+
+    // Reset editor selection when key changes (after revert)
+    useEffect(() => {
+        if (editorKey > 0) {
+            // Reset selection to the beginning of the document
+            setTimeout(() => {
+                try {
+                    if (editor && editor.children.length > 0) {
+                        Transforms.select(editor, [0, 0]);
+                    }
+                } catch (error) {
+                    console.log('Error resetting editor selection:', error);
+                }
+            }, 100);
+        }
+    }, [editorKey, editor]);
+
     // Text style options array for dropdown
     const textStyleOptions = [
         { value: 'paragraph', label: 'Normal text', className: 'text-sm' },
@@ -1259,6 +1429,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         { value: 'paragraph-specific', label: 'Paragraph', className: 'font-medium text-sm' },
         { value: 'subparagraph-specific', label: 'Subparagraph', className: 'font-medium text-xs' },
         { value: 'equation', label: 'Equation', className: 'font-mono text-sm' },
+        { value: 'table', label: 'Table', className: 'text-sm' },
         { value: 'bullet-list', label: 'Bullet List', className: 'text-sm' },
         { value: 'numbered-list', label: 'Numbered List', className: 'text-sm' }
     ];
@@ -1326,6 +1497,40 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             compileDocument();
         }
     }, [latexCode, autoCompile, showPreview]);
+
+    // Track changes when document is saved (either auto-save or manual save)
+    useEffect(() => {
+        if (isSaving === false && lastContentRef.current && projectId && latexCode) {
+            // Only track if we have meaningful changes
+            if (hasMeaningfulChanges(projectId, latexCode)) {
+                console.log('Document was saved with meaningful changes, tracking version');
+                trackSaveEvent();
+            } else {
+                console.log('Document was saved but no meaningful changes detected');
+            }
+            // Notify parent component that save is complete
+            if (onSaveComplete) {
+                onSaveComplete();
+            }
+        }
+    }, [isSaving, onSaveComplete]);
+
+    // Override the onManualSave prop to include change tracking
+    const handleManualSave = () => {
+        if (onManualSave) {
+            onManualSave();
+            // Track the save event after a short delay to ensure the save completes
+            // Only track if there are meaningful changes
+            setTimeout(() => {
+                if (changeTrackingEnabled && projectId && latexCode && hasMeaningfulChanges(projectId, latexCode)) {
+                    console.log('Manual save completed with meaningful changes, tracking version');
+                    trackSaveEvent();
+                } else {
+                    console.log('Manual save completed but no meaningful changes to track');
+                }
+            }, 100);
+        }
+    };
 
     // Handle keyboard shortcuts
     useEffect(() => {
@@ -1441,6 +1646,11 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         }
         if (style === 'numbered-list') {
             insertList('numbered-list');
+            setShowTextStyleDropdown(false);
+            return;
+        }
+        if (style === 'table') {
+            insertTable();
             setShowTextStyleDropdown(false);
             return;
         }
@@ -1610,6 +1820,90 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         }, 100);
     };
 
+    // Change tracking functions
+    const trackDocumentChange = (content: string) => {
+        if (!projectId) return;
+
+        // Determine change type based on content comparison
+        let changeType: 'insertion' | 'deletion' | 'modification' | 'save' = 'modification';
+        let changeDescription = 'Document modified';
+
+        if (lastSavedContent === '') {
+            changeType = 'save';
+            changeDescription = 'Document created';
+        } else if (content.length > lastSavedContent.length) {
+            changeType = 'insertion';
+            changeDescription = 'Content added';
+        } else if (content.length < lastSavedContent.length) {
+            changeType = 'deletion';
+            changeDescription = 'Content removed';
+        }
+
+        // Add version to tracking
+        addLatexProjectVersion(
+            projectId,
+            content,
+            user?.id,
+            user?.role,
+            `Modified by ${user?.name || user?.email || 'user'}`,
+            changeType,
+            changeDescription
+        );
+
+        // Update last saved content
+        setLastSavedContent(content);
+    };
+
+    const handleRevertToVersion = (content: string) => {
+        console.log('VisualLatexEditor: Reverting to version with content length:', content.length);
+        
+        // Update the editor with the reverted content
+        isExternalUpdateRef.current = true;
+        const newValue = latexToSlate(content);
+        
+        // Update all states immediately for instant feedback
+        setValue(newValue);
+        setLatexCode(content);
+        setLastSavedContent(content);
+        lastContentRef.current = content;
+        
+        // Force Slate editor to re-render by changing the key
+        setEditorKey(prev => prev + 1);
+        
+        // Explicitly notify parent component about the content change
+        if (onContentChange) {
+            onContentChange(content);
+        }
+        
+        // Force a complete re-render by updating the render output immediately
+        if (autoCompile) {
+            // Force immediate compilation and preview update
+            setTimeout(() => {
+                compileDocument();
+            }, 0);
+        }
+        
+        // Reset the flag after a longer delay to ensure all updates complete
+        setTimeout(() => {
+            isExternalUpdateRef.current = false;
+        }, 500);
+    };
+
+    // Function to track changes when document is saved
+    const trackSaveEvent = () => {
+        if (changeTrackingEnabled && projectId && latexCode) {
+            // Check if there are meaningful changes before creating a version
+            if (hasMeaningfulChanges(projectId, latexCode)) {
+                console.log('Tracking save event for project:', projectId, 'Content length:', latexCode.length);
+                trackDocumentChange(latexCode);
+            } else {
+                console.log('Skipping version tracking - no meaningful changes detected');
+            }
+        } else {
+            console.log('Skipping version tracking - tracking disabled or no project ID');
+        }
+    };
+
     // Format toggling functions
     const toggleFormat = (format: keyof Omit<CustomText, 'text'>) => {
         const isActive = isFormatActive(format);
@@ -1663,10 +1957,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         } as ImageElement);
     };
 
-    const insertTable = () => {
-        const rows = parseInt(window.prompt('Enter number of rows:', '3') || '3');
-        const cols = parseInt(window.prompt('Enter number of columns:', '3') || '3');
-
+    const insertTable = (rows: number, cols: number) => {
         const tableRows: TableRowElement[] = [];
 
         for (let i = 0; i < rows; i++) {
@@ -1688,6 +1979,50 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             rows,
             cols,
             children: tableRows,
+        } as TableElement);
+    };
+
+    // Function to insert process management table template
+    const insertProcessTable = () => {
+        const tableName = window.prompt('Enter table name (optional):', 'Process Management Table');
+        
+        // Create header row with process management columns
+        const headerRow: TableRowElement = {
+            type: 'table-row',
+            children: [
+                { type: 'table-cell', children: [{ text: 'Process ID', bold: true }] },
+                { type: 'table-cell', children: [{ text: 'Process Name', bold: true }] },
+                { type: 'table-cell', children: [{ text: 'Description', bold: true }] },
+                { type: 'table-cell', children: [{ text: 'Process Owner', bold: true }] },
+                { type: 'table-cell', children: [{ text: 'Process Manager', bold: true }] },
+            ],
+        };
+
+        // Create 5 data rows with sample process IDs
+        const dataRows: TableRowElement[] = [];
+        for (let i = 1; i <= 5; i++) {
+            const processId = `P${String(i).padStart(3, '0')}`;
+            const dataRow: TableRowElement = {
+                type: 'table-row',
+                children: [
+                    { type: 'table-cell', children: [{ text: processId }] },
+                    { type: 'table-cell', children: [{ text: '' }] },
+                    { type: 'table-cell', children: [{ text: '' }] },
+                    { type: 'table-cell', children: [{ text: '' }] },
+                    { type: 'table-cell', children: [{ text: '' }] },
+                ],
+            };
+            dataRows.push(dataRow);
+        }
+
+        // Combine header and data rows
+        const allRows = [headerRow, ...dataRows];
+
+        Transforms.insertNodes(editor, {
+            type: 'table',
+            rows: 6, // 1 header + 5 data rows
+            cols: 5,
+            children: allRows,
         } as TableElement);
     };
 
@@ -1850,6 +2185,10 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
         }
         if (style === 'numbered-list') {
             insertList('numbered-list');
+            return;
+        }
+        if (style === 'table') {
+            insertTable();
             return;
         }
         switch (style) {
@@ -2076,6 +2415,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                     <option value="paragraph-specific">Paragraph</option>
                                     <option value="subparagraph-specific">Subparagraph</option>
                                     <option value="equation">Equation</option>
+                                    <option value="table">Table</option>
                                     <option value="bullet-list">Bullet List</option>
                                     <option value="numbered-list">Numbered List</option>
                                 </select>
@@ -2185,13 +2525,49 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                         </button>
                     </div>
 
-                    {/* Table button */}
+                    {/* Table grid picker button */}
+                    <div className="toolbar-group relative">
                     <button
-                        onClick={insertTable}
+                            onClick={e => {
+                                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                setTableGridPosition({
+                                    top: rect.bottom + window.scrollY + 4,
+                                    left: rect.left + window.scrollX,
+                                });
+                                setShowTableGrid(true);
+                            }}
                         className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
                         title="Insert Table"
                     >
                         <FaTable size={14} />
+                        </button>
+                        {showTableGrid && tableGridPosition && (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    top: 40,
+                                    left: 0,
+                                    zIndex: 1000,
+                                }}
+                            >
+                                <TableGridPicker
+                                    onSelect={(rows, cols) => {
+                                        insertTable(rows, cols);
+                                        setShowTableGrid(false);
+                                    }}
+                                    onClose={() => setShowTableGrid(false)}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Process Table button */}
+                    <button
+                        onClick={insertProcessTable}
+                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        title="Insert Process Management Table"
+                    >
+                        📋
                     </button>
 
                     {/* Image button */}
@@ -2210,6 +2586,20 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                         title="Insert Equation"
                     >
                         <FaRulerHorizontal size={14} />
+                    </button>
+
+                    {/* Changes Tracker button */}
+                    <button
+                        onClick={() => setShowChangesTracker(true)}
+                        className={`p-2 rounded transition ${
+                            projectId 
+                                ? 'bg-[#1a1f2e] text-white hover:bg-[#2a304a]' 
+                                : 'bg-[#1a1f2e] text-gray-500 cursor-not-allowed'
+                        }`}
+                        title={projectId ? "Track Changes History" : "No project selected"}
+                        disabled={!projectId}
+                    >
+                        <FaHistory size={14} />
                     </button>
 
                     <div className="flex-1"></div>
@@ -2271,7 +2661,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                         {/* Manual save button */}
                         {onManualSave && (
                             <button
-                                onClick={onManualSave}
+                                onClick={handleManualSave}
                                 className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center space-x-1"
                                 disabled={isSaving}
                             >
@@ -2291,8 +2681,14 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     ref={editorRef}
                 >
                     <Slate
+                        key={editorKey}
                         editor={editor}
-                        initialValue={value}
+                        initialValue={value || [
+                            {
+                                type: 'paragraph',
+                                children: [{ text: 'Loading...' }],
+                            },
+                        ]}
                         onChange={newValue => setValue(newValue)}
                     >
                         <Editable
@@ -2427,6 +2823,17 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                   background: #555;
                 }
             `}</style>
+
+            {/* Changes Tracker Modal */}
+            <ChangesTracker
+                projectId={projectId || ''}
+                isOpen={showChangesTracker}
+                onClose={() => setShowChangesTracker(false)}
+                onRevert={handleRevertToVersion}
+                currentContent={latexCode}
+                userId={user?.id}
+                userRole={user?.role}
+            />
         </div>
     );
 };

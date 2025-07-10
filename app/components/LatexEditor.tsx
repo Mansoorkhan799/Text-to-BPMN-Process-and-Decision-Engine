@@ -21,7 +21,7 @@ import {
     FaBold, FaItalic, FaList, FaPlay, FaTable, FaImage,
     FaFont, FaListOl, FaIndent, FaOutdent, FaFileAlt,
     FaHeading, FaUnderline, FaRulerHorizontal, FaCode,
-    FaFileWord, FaFileImport, FaFileUpload, FaEye
+    FaFileWord, FaFileImport, FaFileUpload, FaEye, FaHistory
 } from 'react-icons/fa';
 import { Switch } from '../components/ui/Switch';
 import { jsPDF } from 'jspdf';
@@ -30,6 +30,12 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, TableCell, TableRow
 import mammoth from 'mammoth';
 import EditorModeSwitch from './ui/EditorModeSwitch';
 import { LatexProject } from '../utils/latexProjectStorage';
+import { 
+    addLatexProjectVersion, 
+    hasMeaningfulChanges 
+} from '../utils/latexVersions';
+import ChangesTracker from './ChangesTracker';
+import TableGridPicker from './ui/TableGridPicker';
 
 // Add MathJax declaration for TypeScript
 declare global {
@@ -62,43 +68,15 @@ interface LatexEditorProps {
     onEditorModeChange?: (mode: 'code' | 'visual') => void;
     isSaving?: boolean;
     onManualSave?: () => void;
-    user?: { id: string; role: string }; // Add user prop for file access
+    user?: any; // Add user prop for file access
+    projectId?: string; // Add projectId prop for change tracking
+    onSaveComplete?: () => void; // Callback when save completes
 }
 
-const LatexEditor = ({ initialContent, onContentChange, editorMode = 'code', onEditorModeChange, isSaving, onManualSave, user }: LatexEditorProps = {}) => {
-    const [latexContent, setLatexContent] = useState<string>(
-        initialContent ||
-        `\\documentclass{article}
-\\usepackage{amsmath}
-\\usepackage{amssymb}
-\\usepackage{graphicx}
-\\usepackage{hyperref}
+const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initialContentProp, onContentChange, editorMode = 'code', onEditorModeChange, isSaving, onManualSave, projectId, onSaveComplete }) => {
+    const initialContent = initialContentProp || `\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{LaTeX Document}\n\\author{${user?.name || 'Author'}}\n\\date{\\today}\n\n\\begin{document}\n\n\\maketitle\n\n\\section{Introduction}\nThis is a sample LaTeX document. You can edit it in the editor.\n\n\\end{document}`;
 
-\\title{LaTeX Document with Input/Include Support}
-\\author{Mansoor Khan}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\section{Introduction}
-This is a sample LaTeX document that demonstrates \\input{} and \\include{} functionality.
-
-\\section{Including Other Files}
-You can include content from other .tex files using:
-
-\\subsection{Using \\input{}}
-\\input{chapter1}
-
-\\subsection{Using \\include{}}
-\\include{appendix}
-
-\\section{Conclusion}
-This demonstrates how the editor processes \\input{} and \\include{} commands.
-
-\\end{document}`
-    );
+    const [latexContent, setLatexContent] = useState<string>(initialContent);
 
     const [renderOutput, setRenderOutput] = useState<string>('');
     const [editorTheme, setEditorTheme] = useState<string>('vs-dark');
@@ -121,6 +99,11 @@ This demonstrates how the editor processes \\input{} and \\include{} commands.
     const [selectedDropdownIndex, setSelectedDropdownIndex] = useState(0);
     const dropdownItemsRef = useRef<(HTMLButtonElement | null)[]>([]);
 
+    // Change tracking state
+    const [lastSavedContent, setLastSavedContent] = useState<string>('');
+    const [changeTrackingEnabled, setChangeTrackingEnabled] = useState(true);
+    const [showChangesTracker, setShowChangesTracker] = useState(false);
+
     // Text style options array for dropdown
     const textStyleOptions = [
         { value: 'normal', label: 'Normal text', className: 'text-sm' },
@@ -133,6 +116,10 @@ This demonstrates how the editor processes \\input{} and \\include{} commands.
         { value: 'bullet-list', label: 'Bullet List', className: 'text-sm' },
         { value: 'numbered-list', label: 'Numbered List', className: 'text-sm' }
     ];
+
+    // Table grid picker popup state
+    const [showTableGrid, setShowTableGrid] = useState(false);
+    const [tableGridPosition, setTableGridPosition] = useState<{ top: number; left: number } | null>(null);
 
     // Update content when initialContent prop changes
     useEffect(() => {
@@ -583,6 +570,89 @@ This demonstrates how the editor processes \\input{} and \\include{} commands.
             `);
         } catch (e) {
             setRenderOutput(`<div class="error">Error rendering LaTeX: ${e}</div>`);
+        }
+    };
+
+    // Change tracking functions
+    const trackDocumentChange = (content: string) => {
+        if (!projectId) return;
+
+        // Determine change type based on content comparison
+        let changeType: 'insertion' | 'deletion' | 'modification' | 'save' = 'modification';
+        let changeDescription = 'Document modified';
+
+        if (lastSavedContent === '') {
+            changeType = 'save';
+            changeDescription = 'Document created';
+        } else if (content.length > lastSavedContent.length) {
+            changeType = 'insertion';
+            changeDescription = 'Content added';
+        } else if (content.length < lastSavedContent.length) {
+            changeType = 'deletion';
+            changeDescription = 'Content removed';
+        }
+
+        // Add version to tracking
+        addLatexProjectVersion(
+            projectId,
+            content,
+            user?.id,
+            user?.role,
+            `Modified by ${user?.name || user?.email || 'user'}`,
+            changeType,
+            changeDescription
+        );
+
+        // Update last saved content
+        setLastSavedContent(content);
+    };
+
+    // Function to track changes when document is saved
+    const trackSaveEvent = () => {
+        if (changeTrackingEnabled && projectId && latexContent) {
+            // Check if there are meaningful changes before creating a version
+            if (hasMeaningfulChanges(projectId, latexContent)) {
+                console.log('Tracking save event for project:', projectId, 'Content length:', latexContent.length);
+                trackDocumentChange(latexContent);
+            } else {
+                console.log('Skipping version tracking - no meaningful changes detected');
+            }
+        } else {
+            console.log('Skipping version tracking - tracking disabled or no project ID');
+        }
+    };
+
+    // Track changes when document is saved (either auto-save or manual save)
+    useEffect(() => {
+        if (isSaving === false && latexContent && projectId) {
+            // Only track if we have meaningful changes
+            if (hasMeaningfulChanges(projectId, latexContent)) {
+                console.log('Document was saved with meaningful changes, tracking version');
+                trackSaveEvent();
+            } else {
+                console.log('Document was saved but no meaningful changes detected');
+            }
+            // Notify parent component that save is complete
+            if (onSaveComplete) {
+                onSaveComplete();
+            }
+        }
+    }, [isSaving, onSaveComplete]);
+
+    // Override the onManualSave prop to include change tracking
+    const handleManualSave = () => {
+        if (onManualSave) {
+            onManualSave();
+            // Track the save event after a short delay to ensure the save completes
+            // Only track if there are meaningful changes
+            setTimeout(() => {
+                if (changeTrackingEnabled && projectId && latexContent && hasMeaningfulChanges(projectId, latexContent)) {
+                    console.log('Manual save completed with meaningful changes, tracking version');
+                    trackSaveEvent();
+                } else {
+                    console.log('Manual save completed but no meaningful changes to track');
+                }
+            }, 100);
         }
     };
 
@@ -1673,6 +1743,39 @@ This demonstrates how the editor processes \\input{} and \\include{} commands.
         if (menu) menu.classList.add('hidden');
     };
 
+    // Function to insert process management table template
+    const insertProcessTable = () => {
+        const tableName = window.prompt('Enter table name (optional):', 'Process Management Table');
+        const caption = tableName || 'Process Management Table';
+        
+        const processTableCode = `\\begin{table}[h!]
+  \\centering
+  \\begin{tabular}{|c|c|c|c|c|}
+    \\hline
+    \\textbf{Process ID} & \\textbf{Process Name} & \\textbf{Description} & \\textbf{Process Owner} & \\textbf{Process Manager} \\\\
+    \\hline
+    P001 & & & & \\\\
+    \\hline
+    P002 & & & & \\\\
+    \\hline
+    P003 & & & & \\\\
+    \\hline
+    P004 & & & & \\\\
+    \\hline
+    P005 & & & & \\\\
+    \\hline
+  \\end{tabular}
+  \\caption{${caption}}
+  \\label{tab:process_management}
+\\end{table}`;
+
+        insertTextAtCursor(processTableCode, "");
+
+        // Close the table menu after selection
+        const menu = document.getElementById('table-menu');
+        if (menu) menu.classList.add('hidden');
+    };
+
     const insertImage = () => {
         // Create an input element for file selection
         const fileInput = document.createElement('input');
@@ -2621,6 +2724,18 @@ ${latex}
         }
     };
 
+    // Function to handle reverting to a previous version
+    const handleRevertToVersion = (content: string) => {
+        console.log('LatexEditor: Reverting to version with content length:', content.length);
+        setLatexContent(content);
+        setLastSavedContent(content);
+        
+        // Notify parent component about the content change
+        if (onContentChange) {
+            onContentChange(content);
+        }
+    };
+
     return (
         <div className={`latex-editor-container flex flex-col h-full ${isPreviewFullscreen ? 'fullscreen' : ''}`}>
             <div className="py-2 px-4 flex items-center bg-[#252a36]">
@@ -2826,45 +2941,50 @@ ${latex}
                         </button>
                     </div>
 
-                    {/* Table dropdown */}
+                    {/* Table grid picker button */}
                     <div className="toolbar-group relative">
                         <button
-                            onClick={() => {
-                                // Close other dropdowns first
-                                const fontMenu = document.getElementById('font-menu');
-                                const headerFooterMenu = document.getElementById('header-footer-menu');
-                                if (fontMenu && !fontMenu.classList.contains('hidden')) {
-                                    fontMenu.classList.add('hidden');
-                                }
-                                if (headerFooterMenu && !headerFooterMenu.classList.contains('hidden')) {
-                                    headerFooterMenu.classList.add('hidden');
-                                }
-
-                                // Toggle the table menu
-                                const menu = document.getElementById('table-menu');
-                                if (menu) menu.classList.toggle('hidden');
+                            onClick={e => {
+                                const rect = (e.target as HTMLElement).getBoundingClientRect();
+                                setTableGridPosition({
+                                    top: rect.bottom + window.scrollY + 4,
+                                    left: rect.left + window.scrollX,
+                                });
+                                setShowTableGrid(true);
                             }}
                             className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
                             title="Insert Table"
                         >
                             <FaTable size={14} />
                         </button>
-                        <div id="table-menu" className="absolute top-full left-0 mt-1 p-2 bg-[#2a304a] rounded shadow-lg z-10 hidden">
-                            <div className="text-white mb-2 text-sm">Insert Table</div>
-                            <div className="flex flex-col space-y-2">
-                                <div className="flex space-x-2">
-                                    <button onClick={() => insertTable(2, 2)} className="px-3 py-1 bg-[#1a1f2e] text-white rounded hover:bg-[#3a405a] transition">2×2</button>
-                                    <button onClick={() => insertTable(2, 3)} className="px-3 py-1 bg-[#1a1f2e] text-white rounded hover:bg-[#3a405a] transition">2×3</button>
-                                    <button onClick={() => insertTable(3, 2)} className="px-3 py-1 bg-[#1a1f2e] text-white rounded hover:bg-[#3a405a] transition">3×2</button>
-                                </div>
-                                <div className="flex space-x-2">
-                                    <button onClick={() => insertTable(3, 3)} className="px-3 py-1 bg-[#1a1f2e] text-white rounded hover:bg-[#3a405a] transition">3×3</button>
-                                    <button onClick={() => insertTable(3, 4)} className="px-3 py-1 bg-[#1a1f2e] text-white rounded hover:bg-[#3a405a] transition">3×4</button>
-                                    <button onClick={() => insertTable(4, 4)} className="px-3 py-1 bg-[#1a1f2e] text-white rounded hover:bg-[#3a405a] transition">4×4</button>
-                                </div>
+                        {showTableGrid && tableGridPosition && (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    top: 40,
+                                    left: 0,
+                                    zIndex: 1000,
+                                }}
+                            >
+                                <TableGridPicker
+                                    onSelect={(rows, cols) => {
+                                        insertTable(rows, cols);
+                                        setShowTableGrid(false);
+                                    }}
+                                    onClose={() => setShowTableGrid(false)}
+                                />
                             </div>
-                        </div>
+                        )}
                     </div>
+
+                    {/* Process Table button */}
+                    <button
+                        onClick={insertProcessTable}
+                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        title="Insert Process Management Table"
+                    >
+                        📋
+                    </button>
 
                     {/* Image insertion */}
                     <button
@@ -2882,6 +3002,20 @@ ${latex}
                         title="Insert Equation"
                     >
                         <FaRulerHorizontal size={14} />
+                    </button>
+
+                    {/* Changes Tracker button */}
+                    <button
+                        onClick={() => setShowChangesTracker(true)}
+                        className={`p-2 rounded transition ${
+                            projectId 
+                                ? 'bg-[#1a1f2e] text-white hover:bg-[#2a304a]' 
+                                : 'bg-[#1a1f2e] text-gray-500 cursor-not-allowed'
+                        }`}
+                        title={projectId ? "Track Changes History" : "No project selected"}
+                        disabled={!projectId}
+                    >
+                        <FaHistory size={14} />
                     </button>
 
                     <div className="flex-1"></div>
@@ -2916,7 +3050,7 @@ ${latex}
                         {/* Manual save button */}
                         {onManualSave && (
                             <button
-                                onClick={onManualSave}
+                                onClick={handleManualSave}
                                 className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center space-x-1"
                                 disabled={isSaving}
                             >
@@ -3354,6 +3488,17 @@ ${latex}
                     z-index: 10;
                 }
             `}</style>
+
+            {/* Changes Tracker Modal */}
+            <ChangesTracker
+                projectId={projectId || ''}
+                isOpen={showChangesTracker}
+                onClose={() => setShowChangesTracker(false)}
+                onRevert={handleRevertToVersion}
+                currentContent={latexContent}
+                userId={user?.id}
+                userRole={user?.role}
+            />
         </div>
     );
 };

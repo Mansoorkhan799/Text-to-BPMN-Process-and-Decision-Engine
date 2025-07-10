@@ -128,7 +128,7 @@ const LatexFileTree: React.FC<LatexFileTreeProps> = ({
 \\usepackage{hyperref}
 
 \\title{LaTeX Document}
-\\author{${user.name || 'Author'}}
+\\author{${user?.name || ''}}
 \\date{\\today}
 
 \\begin{document}
@@ -247,7 +247,7 @@ This is a sample LaTeX document. You can edit it in the editor.
 \\usepackage{hyperref}
 
 \\title{${projectNameWithExtension.replace('.tex', '')}}
-\\author{${user?.name || 'Author'}}
+\\author{${user?.name || ''}}
 \\date{\\today}
 
 \\begin{document}
@@ -477,7 +477,7 @@ This is a new LaTeX document. You can start editing it in the editor.
 \\usepackage{hyperref}
 
 \\title{${fileNameWithExtension.replace('.tex', '')}}
-\\author{${user?.name || 'Author'}}
+\\author{${user?.name || ''}}
 \\date{\\today}
 
 \\begin{document}
@@ -721,7 +721,7 @@ This is a new LaTeX document. You can start editing it in the editor.
 \\usepackage{hyperref}
 
 \\title{${fileName.replace('.tex', '').replace('.latex', '')}}
-\\author{${user?.name || 'Author'}}
+\\author{${user?.name || ''}}
 \\date{\\today}
 
 \\begin{document}
@@ -876,19 +876,27 @@ This is an imported LaTeX document. You can edit it in the editor.
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
+                              startEditing(node.data);
+                            }}
+                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                            title="Rename"
+                          >
+                            <HiPencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
                               const fileName = prompt('Enter LaTeX file name:');
                               if (!fileName?.trim()) return;
-                              
                               // Ensure the file has .tex extension
                               const fileNameWithExtension = fileName.endsWith('.tex') ? fileName : `${fileName}.tex`;
-                              
                               const newProject: LatexProject = {
                                 id: uuidv4(),
                                 name: fileNameWithExtension,
                                 lastEdited: new Date().toISOString().split('T')[0],
                                 createdBy: user?.id,
                                 role: user?.role,
-                                content: `\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{${fileNameWithExtension.replace('.tex', '')}}\n\\author{${user?.name || 'Author'}}\n\\date{\\today}\n\n\\begin{document}\n\n\\maketitle\n\n\\section{Introduction}\nThis is a new LaTeX document. You can start editing it in the editor.\n\n\\end{document}`
+                                content: `\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{${fileNameWithExtension.replace('.tex', '')}}\n\\author{${user?.name || ''}}\n\\date{\\today}\n\n\\begin{document}\n\n\\maketitle\n\n\\section{Introduction}\nThis is a new LaTeX document. You can start editing it in the editor.\n\n\\end{document}`
                               };
                               const addFileToFolder = (nodes: FileNode[]): FileNode[] =>
                                 nodes.map(nodeItem => {

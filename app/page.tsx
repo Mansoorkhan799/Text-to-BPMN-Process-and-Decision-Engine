@@ -199,7 +199,7 @@ export default function Home() {
 
         {currentView === 'latex' && (
           <main className="flex-1 w-full h-full overflow-hidden">
-            <CombinedLatexEditor />
+            <CombinedLatexEditor user={user} />
           </main>
         )}
 

@@ -17,6 +17,9 @@ import { HiFolder } from 'react-icons/hi';
 const DuplicateWarningModal = dynamic(() => import('./DuplicateWarningModal'), { ssr: false });
 // Add the BpmnFileTree import
 const BpmnFileTree = dynamic(() => import('./BpmnFileTree'), { ssr: false });
+import { convertBpmnToLatex } from '../utils/bpmnToLatex';
+import { saveLatexProject } from '../utils/latexProjectStorage';
+import { getLatexFileTree, saveLatexFileTree, FileTreeNode } from '../utils/fileTreeStorage';
 
 // Add custom CSS for grid background
 const gridStyles = `
@@ -49,7 +52,7 @@ const gridStyles = `
 // We handle CSS imports through a dynamic import approach
 // to avoid SSR issues with Next.js
 
-// Default BPMN XML template for new diagrams
+// Default BPMN XML template for new diagrams WITH POOL AND LANE
 const INITIAL_DIAGRAM = `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
                   xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" 
@@ -58,7 +61,17 @@ const INITIAL_DIAGRAM = `<?xml version="1.0" encoding="UTF-8"?>
                   xmlns:di="http://www.omg.org/spec/DD/20100524/DI" 
                   id="Definitions_1" 
                   targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:collaboration id="Collaboration_1">
+    <bpmn:participant id="Participant_1" name="Process Name" processRef="Process_1" />
+  </bpmn:collaboration>
   <bpmn:process id="Process_1" isExecutable="false">
+    <bpmn:laneSet id="LaneSet_1">
+      <bpmn:lane id="Lane_1" name="Actor">
+        <bpmn:flowNodeRef>StartEvent_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>Activity_1</bpmn:flowNodeRef>
+        <bpmn:flowNodeRef>EndEvent_1</bpmn:flowNodeRef>
+      </bpmn:lane>
+    </bpmn:laneSet>
     <bpmn:startEvent id="StartEvent_1" name="Start">
       <bpmn:outgoing>Flow_1</bpmn:outgoing>
     </bpmn:startEvent>
@@ -73,30 +86,38 @@ const INITIAL_DIAGRAM = `<?xml version="1.0" encoding="UTF-8"?>
     <bpmn:sequenceFlow id="Flow_2" sourceRef="Activity_1" targetRef="EndEvent_1" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
-      <bpmndi:BPMNShape id="_BPMNShape_StartEvent_2" bpmnElement="StartEvent_1">
-        <dc:Bounds x="182" y="102" width="36" height="36" />
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Collaboration_1">
+      <bpmndi:BPMNShape id="Participant_1_di" bpmnElement="Participant_1" isHorizontal="true">
+        <dc:Bounds x="120" y="60" width="600" height="180" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="Lane_1_di" bpmnElement="Lane_1" isHorizontal="true">
+        <dc:Bounds x="150" y="60" width="570" height="180" />
+        <bpmndi:BPMNLabel />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="200" y="120" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="186" y="142" width="27" height="14" />
+          <dc:Bounds x="200" y="160" width="27" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="Activity_1_di" bpmnElement="Activity_1">
-        <dc:Bounds x="270" y="80" width="100" height="80" />
+        <dc:Bounds x="300" y="100" width="100" height="80" />
         <bpmndi:BPMNLabel />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="EndEvent_1_di" bpmnElement="EndEvent_1">
-        <dc:Bounds x="422" y="102" width="36" height="36" />
+        <dc:Bounds x="450" y="120" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="427" y="142" width="27" height="14" />
+          <dc:Bounds x="450" y="160" width="27" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="Flow_1_di" bpmnElement="Flow_1">
-        <di:waypoint x="218" y="120" />
-        <di:waypoint x="270" y="120" />
+        <di:waypoint x="236" y="138" />
+        <di:waypoint x="300" y="138" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="Flow_2_di" bpmnElement="Flow_2">
-        <di:waypoint x="370" y="120" />
-        <di:waypoint x="422" y="120" />
+        <di:waypoint x="400" y="138" />
+        <di:waypoint x="450" y="138" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
@@ -142,6 +163,17 @@ const BpmnEditor = () => {
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     // Add state for file tree refresh
     const [fileTreeRefreshTrigger, setFileTreeRefreshTrigger] = useState(0);
+    // Add state for table pane
+    const [showTablePane, setShowTablePane] = useState(true);
+    const [tablePaneCollapsed, setTablePaneCollapsed] = useState(false);
+    const [tableFormData, setTableFormData] = useState({
+        processName: '',
+        task: '',
+        procedure: '',
+        toolsReferences: '',
+        role: ''
+    });
+    const [generatingLatex, setGeneratingLatex] = useState(false);
 
     // Fetch current user on component mount
     useEffect(() => {
@@ -2010,11 +2042,73 @@ const BpmnEditor = () => {
         }
     };
 
+    // Handle Generate LaTeX File
+    const handleGenerateLatex = async () => {
+        if (!modeler || !user) {
+            toast.error('Please ensure you are logged in and the editor is loaded');
+            return;
+        }
+
+        setGeneratingLatex(true);
+        
+        try {
+            // Get current BPMN XML
+            const { xml } = await modeler.saveXML({ format: true });
+            
+            // Get current project info for file naming
+            const currentProject = projectId ? await getProjectById(projectId, user.id, user.role) : null;
+            const fileName = currentProject?.name || 'untitled_diagram';
+            
+            // Convert BPMN to LaTeX
+            const latexContent = convertBpmnToLatex(xml, fileName);
+            
+            // Create LaTeX project
+            const latexProject = {
+                id: `latex-${Date.now()}`,
+                name: `${fileName.replace(/[^a-zA-Z0-9]/g, '_')}_bpmn.tex`,
+                content: latexContent,
+                lastEdited: new Date().toISOString().split('T')[0],
+                createdBy: user.id,
+                role: user.role
+            };
+            
+            // Save to LaTeX storage
+            saveLatexProject(latexProject, user.id, user.role);
+            
+            // Update LaTeX file tree
+            const savedTree = getLatexFileTree(user.id, user.role);
+            const newFileNode: FileTreeNode = {
+                id: latexProject.id,
+                name: latexProject.name,
+                type: 'file' as const,
+                projectData: latexProject,
+                path: latexProject.name
+            };
+            const updatedTree = [...savedTree, newFileNode];
+            saveLatexFileTree(updatedTree, user.id, user.role);
+            
+            // Show success message
+            toast.success(`LaTeX file generated successfully: ${latexProject.name}`, {
+                duration: 4000,
+                position: 'bottom-right'
+            });
+            
+            // Optionally, you could open the LaTeX editor here
+            // For now, just show the success message
+            
+        } catch (error) {
+            console.error('Error generating LaTeX file:', error);
+            toast.error('Failed to generate LaTeX file. Please try again.');
+        } finally {
+            setGeneratingLatex(false);
+        }
+    };
+
     return (
         <div className="flex h-full relative">
-            {/* File Tree Sidebar */}
+            {/* File Tree Sidebar - Left Side */}
             {showFileTree && !sidebarCollapsed && (
-                <div className="relative w-64 flex-shrink-0 bg-white border-r">
+                <div className="relative w-64 flex-shrink-0 bg-white border-r order-first">
                     <BpmnFileTree
                         key={fileTreeRefreshTrigger}
                         user={user}
@@ -2059,16 +2153,173 @@ const BpmnEditor = () => {
                     </div>
                 </div>
             )}
-            <div className={`flex flex-1 flex-col overflow-hidden${sidebarCollapsed ? ' ml-14' : ''}`}>
+
+            {/* Table Pane Sidebar - Right Side */}
+            {showTablePane && !tablePaneCollapsed && (
+                <div className="relative w-80 flex-shrink-0 bg-white border-l border-gray-200 order-last">
+                    <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-gray-800">Process Details</h3>
+                            <button
+                                onClick={() => setTablePaneCollapsed(true)}
+                                className="p-1 text-gray-500 hover:bg-gray-100 rounded"
+                                title="Collapse Table Pane"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {/* Process Name */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    1. Process Name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={tableFormData.processName}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, processName: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="Enter process name"
+                                />
+                            </div>
+
+                            {/* Task */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    2. Task
+                                </label>
+                                <textarea
+                                    value={tableFormData.task}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, task: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="Enter task description"
+                                    rows={3}
+                                />
+                            </div>
+
+                            {/* Procedure */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    3. Procedure
+                                </label>
+                                <textarea
+                                    value={tableFormData.procedure}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, procedure: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="Enter procedure steps"
+                                    rows={4}
+                                />
+                            </div>
+
+                            {/* Tools/References */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    4. Tools/References
+                                </label>
+                                <textarea
+                                    value={tableFormData.toolsReferences}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, toolsReferences: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="Enter tools and references"
+                                    rows={3}
+                                />
+                            </div>
+
+                            {/* Role */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    5. Role
+                                </label>
+                                <input
+                                    type="text"
+                                    value={tableFormData.role}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, role: e.target.value }))}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="Enter role"
+                                />
+                            </div>
+
+                            {/* Action Buttons */}
+                            <div className="flex space-x-2 pt-4">
+                                <button
+                                    onClick={() => {
+                                        // Save the form data (you can implement saving logic here)
+                                        toast.success('Process details saved!');
+                                    }}
+                                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    Save
+                                </button>
+                                <button
+                                    onClick={() => setTableFormData({
+                                        processName: '',
+                                        task: '',
+                                        procedure: '',
+                                        toolsReferences: '',
+                                        role: ''
+                                    })}
+                                    className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                                >
+                                    Clear
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Collapse Arrow - Left side of the right pane */}
+                    <button
+                        onClick={() => setTablePaneCollapsed(true)}
+                        className="absolute top-1/2 -left-3 transform -translate-y-1/2 bg-white border border-gray-300 rounded-full shadow p-1 z-10 hover:bg-gray-100"
+                        title="Collapse Table Pane"
+                        style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19l7-7-7-7" />
+                        </svg>
+                    </button>
+                </div>
+            )}
+
+            {/* Expand Arrow when table pane is collapsed */}
+            {tablePaneCollapsed && (
+                <div className="absolute top-1/2 right-0 z-20 flex flex-col items-center" style={{ transform: 'translateY(-50%)' }}>
+                    <div className="flex flex-col items-center justify-center bg-white rounded-xl border border-gray-200 shadow-md px-3 py-4" style={{ minWidth: 48 }}>
+                        <button
+                            className="flex items-center justify-center w-8 h-8 rounded focus:outline-none hover:bg-gray-100 mb-2"
+                            onClick={() => setTablePaneCollapsed(false)}
+                            aria-label="Expand table pane"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 6h18M3 14h18M3 18h18" />
+                            </svg>
+                        </button>
+                        <button
+                            className="flex items-center justify-center w-6 h-6 rounded focus:outline-none hover:bg-gray-100"
+                            onClick={() => setTablePaneCollapsed(false)}
+                            aria-label="Expand table pane"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Main Editor Container - Middle */}
+            <div className={`flex flex-1 flex-col min-w-0 overflow-hidden order-2${sidebarCollapsed ? ' ml-14' : ''}${tablePaneCollapsed ? ' mr-14' : ''}`}>
                 {/* Toolbar with icons */}
-                <div className="bg-white border-b px-4 py-2 flex items-center space-x-4">
+                <div className="bg-white border-b px-2 py-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                     {/* Back button */}
                     <button
                         onClick={handleBackToDashboard}
-                        className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                        className="inline-flex items-center justify-center p-1 rounded focus:outline-none"
                         title="Back to Dashboard"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                             <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
                         </svg>
                     </button>
@@ -2091,7 +2342,7 @@ const BpmnEditor = () => {
                                     className="ml-2 p-1 text-green-600 hover:bg-green-50 rounded"
                                     title="Save"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                     </svg>
                                 </button>
@@ -2100,7 +2351,7 @@ const BpmnEditor = () => {
                                     className="ml-1 p-1 text-red-600 hover:bg-red-50 rounded"
                                     title="Cancel"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                         <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
                                     </svg>
                                 </button>
@@ -2131,10 +2382,10 @@ const BpmnEditor = () => {
                         {/* New Diagram */}
                         <button
                             onClick={handleNew}
-                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            className="inline-flex items-center justify-center p-1 rounded focus:outline-none"
                             title="New Diagram"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                 <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V8z" clipRule="evenodd" />
                             </svg>
                         </button>
@@ -2146,17 +2397,17 @@ const BpmnEditor = () => {
                             <button
                                 onClick={toggleImportDropdown}
                                 disabled={importingFile}
-                                className={`inline-flex items-center justify-center p-2 rounded-md ${importingFile ? 'text-orange-400' : 'text-orange-600 hover:bg-orange-50'} transition-colors focus:outline-none`}
+                                className={`inline-flex items-center justify-center p-1 rounded focus:outline-none ${importingFile ? 'text-orange-400' : 'text-orange-600 hover:bg-orange-50'} transition-colors`}
                                 title="Import Diagram"
                             >
                                 {importingFile ? (
-                                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
                                 ) : (
                                     <div className="flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                         </svg>
                                         <span className="ml-1 font-medium text-sm">Import</span>
@@ -2258,16 +2509,16 @@ const BpmnEditor = () => {
                         <button
                             onClick={handleSaveProject}
                             disabled={downloading}
-                            className={`inline-flex items-center justify-center p-2 rounded-md ${downloading ? 'text-green-400' : 'text-green-600 hover:bg-green-50'} transition-colors focus:outline-none`}
+                            className={`inline-flex items-center justify-center p-1 rounded focus:outline-none ${downloading ? 'text-green-400' : 'text-green-600 hover:bg-green-50'} transition-colors`}
                             title="Save Project (Ctrl+S)"
                         >
                             {downloading ? (
-                                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
                             ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                     <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
                                 </svg>
                             )}
@@ -2288,17 +2539,17 @@ const BpmnEditor = () => {
                             <button
                                 onClick={toggleExportDropdown}
                                 disabled={exportingFile}
-                                className={`inline-flex items-center justify-center p-2 rounded-md ${exportingFile ? 'text-blue-400' : 'text-blue-600 hover:bg-blue-50'} transition-colors focus:outline-none`}
+                                className={`inline-flex items-center justify-center p-1 rounded focus:outline-none ${exportingFile ? 'text-blue-400' : 'text-blue-600 hover:bg-blue-50'} transition-colors`}
                                 title="Export Diagram"
                             >
                                 {exportingFile ? (
-                                    <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                     </svg>
                                 ) : (
                                     <div className="flex items-center">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
                                             <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L10 8.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
                                         </svg>
                                         <span className="ml-1 font-medium text-sm">Download</span>
@@ -2372,10 +2623,10 @@ const BpmnEditor = () => {
                         {/* Zoom In */}
                         <button
                             onClick={() => modeler?.get('canvas').zoom(modeler.get('canvas').zoom() + 0.1)}
-                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            className="inline-flex items-center justify-center p-1 rounded focus:outline-none"
                             title="Zoom In"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                             </svg>
                         </button>
@@ -2383,10 +2634,10 @@ const BpmnEditor = () => {
                         {/* Zoom Out */}
                         <button
                             onClick={() => modeler?.get('canvas').zoom(modeler.get('canvas').zoom() - 0.1)}
-                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            className="inline-flex items-center justify-center p-1 rounded focus:outline-none"
                             title="Zoom Out"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
                             </svg>
                         </button>
@@ -2394,10 +2645,10 @@ const BpmnEditor = () => {
                         {/* Fit to View */}
                         <button
                             onClick={() => modeler?.get('canvas').zoom('fit-viewport')}
-                            className="inline-flex items-center justify-center p-2 rounded-md text-gray-700 hover:bg-gray-100 transition-colors focus:outline-none"
+                            className="inline-flex items-center justify-center p-1 rounded focus:outline-none"
                             title="Fit to View"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5v-4m0 4h-4m4 0l-5-5" />
                             </svg>
                         </button>
@@ -2411,11 +2662,36 @@ const BpmnEditor = () => {
                             className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-purple-100 text-purple-600 hover:bg-purple-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px]"
                             title="View Diagram"
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                             </svg>
                             <span className="font-medium">View Diagram</span>
+                        </button>
+                        {/* Generate LaTeX File Button */}
+                        <button
+                            onClick={handleGenerateLatex}
+                            disabled={generatingLatex}
+                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-yellow-100 text-yellow-700 hover:bg-yellow-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px] disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Generate LaTeX File"
+                        >
+                            {generatingLatex ? (
+                                <>
+                                    <svg className="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span className="font-medium">Generating...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 21v-8a2 2 0 00-2-2H7a2 2 0 00-2 2v8" />
+                                    </svg>
+                                    <span className="font-medium">Generate LaTeX File</span>
+                                </>
+                            )}
                         </button>
 
                         {/* Send for Approval - only show for regular users */}
@@ -2428,7 +2704,7 @@ const BpmnEditor = () => {
                             >
                                 {sendingForApproval ? (
                                     <>
-                                        <svg className="animate-spin h-5 w-5 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <svg className="animate-spin h-4 w-4 mr-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                         </svg>
@@ -2436,7 +2712,7 @@ const BpmnEditor = () => {
                                     </>
                                 ) : (
                                     <>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                                         </svg>
                                         <span className="font-medium">Send for Approval</span>
@@ -2452,7 +2728,7 @@ const BpmnEditor = () => {
                     {/* Editor Container */}
                     <div
                         ref={containerRef}
-                        className="flex-1 bg-white"
+                        className="flex-1 min-w-0 bg-white"
                         style={{ height: 'calc(100vh - 140px)' }}
                     />
                 </div>
