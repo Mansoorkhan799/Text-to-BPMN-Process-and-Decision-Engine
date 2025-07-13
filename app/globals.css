@@ -1,0 +1,83 @@
+/* purgecss start ignore */
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+/* purgecss end ignore */
+
+/* Custom styles can go here */
+
+/* File Tree Styles */
+.file-tree {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.file-tree .tree-node {
+  user-select: none;
+}
+
+.file-tree .tree-node:hover {
+  background-color: rgba(59, 130, 246, 0.05);
+}
+
+.file-tree .tree-node.selected {
+  background-color: rgba(59, 130, 246, 0.1);
+}
+
+/* Context menu styles */
+.context-menu {
+  position: fixed;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  min-width: 160px;
+}
+
+.context-menu-item {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: #374151;
+}
+
+.context-menu-item:hover {
+  background-color: #f3f4f6;
+}
+
+.context-menu-item.danger {
+  color: #dc2626;
+}
+
+.context-menu-item.danger:hover {
+  background-color: #fef2f2;
+}
+
+/* BPMN Editor specific styles */
+.bjs-container {
+  background-color: white;
+  background-image: 
+    repeating-linear-gradient(to right, #f0f0f0, #f0f0f0 1px, transparent 1px, transparent 20px),
+    repeating-linear-gradient(to bottom, #f0f0f0, #f0f0f0 1px, transparent 1px, transparent 20px);
+  background-size: 20px 20px;
+  background-position: -0.5px -0.5px;
+}
+
+/* Create the dotted grid effect */
+.bjs-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background-image: 
+    radial-gradient(circle, #e6e6e6 1px, transparent 1px);
+  background-size: 20px 20px;
+  background-position: 10px 10px;
+  z-index: 0;
+}
