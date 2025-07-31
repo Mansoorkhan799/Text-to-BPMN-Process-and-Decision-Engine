@@ -641,7 +641,9 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
 
     // Override the onManualSave prop to include change tracking
     const handleManualSave = () => {
+        console.log('LatexEditor handleManualSave called, onManualSave prop:', !!onManualSave);
         if (onManualSave) {
+            console.log('Calling onManualSave prop');
             onManualSave();
             // Track the save event after a short delay to ensure the save completes
             // Only track if there are meaningful changes
@@ -653,6 +655,8 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
                     console.log('Manual save completed but no meaningful changes to track');
                 }
             }, 100);
+        } else {
+            console.log('onManualSave prop is not provided');
         }
     };
 
@@ -1745,28 +1749,20 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
 
     // Function to insert process management table template
     const insertProcessTable = () => {
-        const tableName = window.prompt('Enter table name (optional):', 'Process Management Table');
-        const caption = tableName || 'Process Management Table';
+        const tableName = window.prompt('Enter table name (optional):', 'Process Details Table');
+        const caption = tableName || 'Process Details Table';
         
         const processTableCode = `\\begin{table}[h!]
   \\centering
-  \\begin{tabular}{|c|c|c|c|c|}
+  \\begin{tabular}{|c|c|c|c|}
     \\hline
-    \\textbf{Process ID} & \\textbf{Process Name} & \\textbf{Description} & \\textbf{Process Owner} & \\textbf{Process Manager} \\\\
+    \\textbf{Process Name} & \\textbf{Description} & \\textbf{Process Owner} & \\textbf{Process Manager} \\\\
     \\hline
-    P001 & & & & \\\\
-    \\hline
-    P002 & & & & \\\\
-    \\hline
-    P003 & & & & \\\\
-    \\hline
-    P004 & & & & \\\\
-    \\hline
-    P005 & & & & \\\\
+    & & & \\\\
     \\hline
   \\end{tabular}
   \\caption{${caption}}
-  \\label{tab:process_management}
+  \\label{tab:process_details}
 \\end{table}`;
 
         insertTextAtCursor(processTableCode, "");
@@ -1774,6 +1770,81 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
         // Close the table menu after selection
         const menu = document.getElementById('table-menu');
         if (menu) menu.classList.add('hidden');
+    };
+
+    // Function to insert LaTeX template
+    const insertLatexTemplate = () => {
+        const templateCode = `\\documentclass[12pt,a4paper]{article}
+\\usepackage{hyperref}
+\\usepackage{titlesec}
+
+% Formatting for sections and subsections
+\\titleformat{\\section}{\\normalfont\\Large\\bfseries}{\\thesection.}{1em}{}
+\\titleformat{\\subsection}{\\normalfont\\large\\bfseries}{\\thesubsection}{1em}{}
+
+\\begin{document}
+
+\\tableofcontents
+\\newpage
+
+\\section{Introduction}
+\\subsection{Goal}
+% Write content here
+
+\\subsection{Objective}
+% Write content here
+
+\\subsection{Triggers, Inputs \\& Outputs}
+% Write content here
+
+\\subsection{Process Design}
+% Write content here
+
+\\subsection{High Level (Mega) Process Design}
+% Write content here
+
+\\subsection{Process Overview}
+% Write content here
+
+\\subsection{Detailed Explanation of Process}
+% Write content here
+
+\\section{Process Implementation}
+\\subsection{Process Roles}
+% Write content here
+
+\\subsection{Metrics}
+% Write content here
+
+\\subsection{KPI's}
+% Write content here
+
+\\subsection{Process Challenges and Risks}
+% Write content here
+
+\\section{Reference Guidelines}
+\\subsection{Reference Process/Template Documents (If Any)}
+% Write content here
+
+\\subsection{Framework and Standards References (If Any)}
+% Write content here
+
+\\section{Appendices}
+\\subsection{Appendix I: Glossary}
+% Write content here
+
+\\section{Disclaimer}
+% Write content here
+
+\\section{Abbreviations}
+% Write content here
+
+\\section{Flowchart Guidelines}
+% Write content here
+
+\\end{document}`;
+
+        insertTextAtCursor(templateCode, "");
     };
 
     const insertImage = () => {
@@ -2986,6 +3057,15 @@ ${latex}
                         📋
                     </button>
 
+                    {/* Template button */}
+                    <button
+                        onClick={() => insertLatexTemplate()}
+                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        title="Insert LaTeX Template"
+                    >
+                        📄
+                    </button>
+
                     {/* Image insertion */}
                     <button
                         onClick={insertImage}
@@ -3048,15 +3128,18 @@ ${latex}
                         </button>
 
                         {/* Manual save button */}
-                        {onManualSave && (
+                        {onManualSave ? (
                             <button
                                 onClick={handleManualSave}
                                 className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 transition flex items-center space-x-1"
                                 disabled={isSaving}
+                                title="Save (Ctrl+S)"
                             >
                                 <FaFileAlt size={12} />
                                 <span>Save</span>
                             </button>
+                        ) : (
+                            <div className="px-3 py-1 text-gray-400 text-xs">Save button not available</div>
                         )}
                     </div>
                 </div>

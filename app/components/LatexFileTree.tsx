@@ -11,15 +11,39 @@ import {
   HiDuplicate,
   HiChevronRight,
   HiChevronDown,
+  HiChevronLeft,
   HiEye,
   HiUpload,
   HiDotsVertical,
-  HiChevronLeft
+  HiRefresh,
+  HiFolderAdd,
+  HiDocumentAdd,
+  HiFolderOpen,
+  HiDocumentText,
+  HiCloudUpload
 } from 'react-icons/hi';
 import { toast } from 'react-hot-toast';
-import { saveLatexProject, getLatexProjectById, deleteLatexProject, getSavedLatexProjects, LatexProject } from '../utils/latexProjectStorage';
-import { saveLatexFileTree, getLatexFileTree, migrateProjectsToFileTree, FileTreeNode } from '../utils/fileTreeStorage';
+import { 
+  saveLatexProject, 
+  getLatexProjectById, 
+  deleteLatexProject, 
+  getSavedLatexProjects, 
+  saveLatexProjectToAPI,
+  updateLatexProjectInAPI,
+  deleteLatexProjectFromAPI,
+  getLatexProjectByIdFromAPI,
+  LatexProject 
+} from '../utils/latexProjectStorage';
+import { 
+  saveLatexFileTree, 
+  getLatexFileTree, 
+  migrateProjectsToFileTree, 
+  getLatexTreeFromAPI,
+  saveLatexFileTreeToAPI,
+  FileTreeNode 
+} from '../utils/fileTreeStorage';
 import { v4 as uuidv4 } from 'uuid';
+import mammoth from 'mammoth';
 
 interface User {
   id: string;
@@ -32,6 +56,15 @@ interface FileNode extends FileTreeNode {
   projectData?: LatexProject;
 }
 
+interface LatexTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  content: string;
+  isDefault: boolean;
+}
+
 interface LatexFileTreeProps {
   user: User | null;
   onProjectSelect: (project: LatexProject) => void;
@@ -39,7 +72,6 @@ interface LatexFileTreeProps {
   onFileUpload: (file: File, fileType: 'tex' | 'latex') => void;
   currentProjectId?: string | null;
   onRefresh?: () => void;
-  onDefaultFileCreated?: (project: LatexProject) => void;
 }
 
 const LatexFileTree: React.FC<LatexFileTreeProps> = ({
@@ -48,8 +80,7 @@ const LatexFileTree: React.FC<LatexFileTreeProps> = ({
   onNewProject,
   onFileUpload,
   currentProjectId,
-  onRefresh,
-  onDefaultFileCreated
+  onRefresh
 }) => {
   const [fileTree, setFileTree] = useState<FileNode[]>([]);
   const [contextMenu, setContextMenu] = useState<{
@@ -61,10 +92,14 @@ const LatexFileTree: React.FC<LatexFileTreeProps> = ({
   const [editingNode, setEditingNode] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const uploadInputRef = useRef<HTMLInputElement>(null);
-  const [collapsed, setCollapsed] = useState(false);
-
-  // Add state to track expanded folders
+  const [isLoading, setIsLoading] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState(false);
+  const [templates, setTemplates] = useState<LatexTemplate[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<LatexTemplate | null>(null);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [pendingFileName, setPendingFileName] = useState('');
+  const [pendingParentFolderId, setPendingParentFolderId] = useState<string | undefined>(undefined);
 
   // Load expanded state from localStorage
   const loadExpandedState = useCallback(() => {
@@ -91,104 +126,52 @@ const LatexFileTree: React.FC<LatexFileTreeProps> = ({
   }, [user]);
 
   // Load projects and build file tree
-  const loadFileTree = useCallback(() => {
+  const loadFileTree = useCallback(async () => {
     if (!user) return;
     
+    setIsLoading(true);
     console.log('Loading file tree for user:', { userId: user.id, userRole: user.role });
     
-    // First try to get the saved file tree structure
-    let savedTree = getLatexFileTree(user.id, user.role);
-    console.log('Retrieved saved tree with', savedTree.length, 'nodes');
-    
-    // If no saved tree exists, migrate from existing projects
+    try {
+      // Get the hierarchical tree from the database API
+      const savedTree = await getLatexTreeFromAPI(user.id);
+      console.log('Retrieved tree from database with', savedTree.length, 'nodes');
+      
     if (savedTree.length === 0) {
-      const projects = getSavedLatexProjects(user.id, user.role);
-      console.log('No saved tree found, migrating', projects.length, 'projects');
-      savedTree = migrateProjectsToFileTree(projects, user.id, user.role, 'latex');
-      // Save the migrated tree
-      if (savedTree.length > 0) {
-        saveLatexFileTree(savedTree, user.id, user.role);
-        console.log('Saved migrated tree with', savedTree.length, 'nodes');
-      }
-    }
-    
-    // If still no files exist, create a default main.tex file
-    if (savedTree.length === 0) {
-      console.log('No files found, creating default main.tex file');
-      const defaultProject: LatexProject = {
-        id: uuidv4(),
-        name: 'main.tex',
-        lastEdited: new Date().toISOString().split('T')[0],
+        // No files exist, set empty tree
+        console.log('No files found, setting empty tree');
+        setFileTree([]);
+      } else {
+        // Convert database nodes to FileNode format
+        const convertToFileNodes = (nodes: any[]): FileNode[] => {
+          return nodes.map(node => ({
+            id: node.id,
+            name: node.name,
+            type: node.type,
+            parentId: node.parentId,
+            path: node.path || node.name,
+            children: node.children ? convertToFileNodes(node.children) : undefined,
+            projectData: node.type === 'file' ? {
+              id: node.id, // Use the same ID as the node for consistency
+              name: node.name,
+              lastEdited: node.updatedAt || new Date().toISOString(),
+              content: node.content,
         createdBy: user.id,
         role: user.role,
-        content: `\\documentclass{article}
-\\usepackage{amsmath}
-\\usepackage{amssymb}
-\\usepackage{graphicx}
-\\usepackage{hyperref}
-
-\\title{LaTeX Document}
-\\author{${user?.name || ''}}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\section{Introduction}
-This is a sample LaTeX document. You can edit it in the editor.
-
-\\end{document}`
-      };
-
-      // Save the default project
-      saveLatexProject(defaultProject, user.id, user.role);
-
-      // Create a file node for the default project
-      const defaultFileNode: FileNode = {
-        id: defaultProject.id,
-        name: defaultProject.name,
-        type: 'file',
-        projectData: defaultProject,
-        path: defaultProject.name
-      };
-
-      // Add the default file to the tree
-      savedTree = [defaultFileNode];
-      saveLatexFileTree(savedTree, user.id, user.role);
-      console.log('Created default main.tex file and saved to tree');
-      
-      // Notify parent component about the default file creation
-      if (onDefaultFileCreated) {
-        onDefaultFileCreated(defaultProject);
+            } : undefined
+          }));
+        };
+        
+        const convertedTree = convertToFileNodes(savedTree);
+        console.log('Setting file tree with', convertedTree.length, 'nodes');
+        setFileTree(convertedTree);
       }
+    } catch (error) {
+      console.error('Error loading file tree:', error);
+      toast.error('Failed to load file tree');
+    } finally {
+      setIsLoading(false);
     }
-    
-    // Update project data in the tree with latest data from storage
-    const updateTreeWithLatestProjects = (nodes: FileNode[]): FileNode[] => {
-      return nodes.map(node => {
-        if (node.type === 'file' && node.projectData) {
-          // Get the latest project data from storage
-          const latestProject = getSavedLatexProjects(user.id, user.role).find(p => p.id === node.projectData?.id);
-          if (latestProject) {
-            console.log('Updating tree node with latest project data:', { 
-              nodeId: node.id, 
-              projectId: latestProject.id, 
-              contentLength: latestProject.content?.length 
-            });
-            return { ...node, projectData: latestProject };
-          }
-        }
-        if (node.children) {
-          return { ...node, children: updateTreeWithLatestProjects(node.children) };
-        }
-        return node;
-      });
-    };
-    
-    const updatedTree = updateTreeWithLatestProjects(savedTree);
-    console.log('Setting file tree with', updatedTree.length, 'nodes');
-    setFileTree(updatedTree);
   }, [user]);
 
   useEffect(() => {
@@ -200,7 +183,28 @@ This is a sample LaTeX document. You can edit it in the editor.
     loadExpandedState();
   }, [loadExpandedState]);
 
-  // Handle context menu
+  // Fetch templates from database
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const response = await fetch('/api/latex-templates');
+      if (response.ok) {
+        const data = await response.json();
+        setTemplates(data.templates || []);
+        // Set default template
+        const defaultTemplate = data.templates?.find((t: LatexTemplate) => t.isDefault);
+        setSelectedTemplate(defaultTemplate || null);
+      } else {
+        console.error('Failed to fetch templates');
+      }
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+    }
+  }, []);
+
+  // Load templates when component mounts
+  useEffect(() => {
+    fetchTemplates();
+  }, [fetchTemplates]);
 
   // Handle context menu
   const handleContextMenu = (e: React.MouseEvent, node: FileNode) => {
@@ -223,16 +227,27 @@ This is a sample LaTeX document. You can edit it in the editor.
   const handleNodeClick = (node: FileNode) => {
     if (node.type === 'file' && node.projectData) {
       onProjectSelect(node.projectData);
+      toast.success(`Opened "${node.name}" successfully!`);
     }
   };
 
   // Create new project
-  const createNewProject = () => {
+  const createNewProject = async () => {
     const projectName = prompt('Enter LaTeX document name:');
     if (!projectName?.trim()) return;
 
+    // Store the file name and show template selection modal
+    setPendingFileName(projectName);
+    setPendingParentFolderId(undefined);
+    setShowTemplateModal(true);
+  };
+
+  // Create new project with selected template
+  const createNewProjectWithTemplate = async (template: LatexTemplate) => {
+    if (!pendingFileName?.trim()) return;
+
     // Ensure the file has .tex extension
-    const projectNameWithExtension = projectName.endsWith('.tex') ? projectName : `${projectName}.tex`;
+    const projectNameWithExtension = pendingFileName.endsWith('.tex') ? pendingFileName : `${pendingFileName}.tex`;
 
     const newProject: LatexProject = {
       id: uuidv4(),
@@ -240,66 +255,187 @@ This is a sample LaTeX document. You can edit it in the editor.
       lastEdited: new Date().toISOString().split('T')[0],
       createdBy: user?.id,
       role: user?.role,
-      content: `\\documentclass{article}
-\\usepackage{amsmath}
-\\usepackage{amssymb}
-\\usepackage{graphicx}
-\\usepackage{hyperref}
-
-\\title{${projectNameWithExtension.replace('.tex', '')}}
-\\author{${user?.name || ''}}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\section{Introduction}
-This is a new LaTeX document. You can start editing it in the editor.
-
-\\end{document}`
+      content: template.content
     };
 
-    // Save the project first
-    saveLatexProject(newProject, user?.id, user?.role);
+    try {
+      // Save the project to database first
+      const success = await saveLatexProjectToAPI(newProject, user?.id, user?.role);
+      if (!success) {
+        toast.error('Failed to create LaTeX file');
+        return;
+      }
 
-    // Add the new project to the file tree
-    const newFileNode: FileNode = {
+      // Also save to the tree structure in database
+      const treeRes = await fetch('/api/latex-nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          type: 'file',
+          name: newProject.name,
+          parentId: pendingParentFolderId,
+          content: newProject.content
+        })
+      });
+
+      if (!treeRes.ok) {
+        console.error('Failed to add file to tree structure');
+      }
+
+      // Create the file node
+      const fileNode: FileNode = {
       id: newProject.id,
       name: newProject.name,
       type: 'file',
       projectData: newProject,
-      path: newProject.name
-    };
+        parentId: pendingParentFolderId,
+        path: pendingParentFolderId ? `${pendingParentFolderId}/${newProject.name}` : newProject.name
+      };
+
+      if (pendingParentFolderId) {
+        // Add to specific folder
+        const addFileToFolder = (nodes: FileNode[]): FileNode[] =>
+          nodes.map(node => {
+            if (node.id === pendingParentFolderId && node.type === 'folder') {
+              return {
+                ...node,
+                children: [...(node.children || []), fileNode]
+              };
+            }
+            if (node.children) {
+              return { ...node, children: addFileToFolder(node.children) };
+            }
+            return node;
+          });
 
     setFileTree(prev => {
-      const updatedTree = [...prev, newFileNode];
-      saveLatexFileTree(updatedTree, user?.id, user?.role);
+          const updatedTree = addFileToFolder(prev);
       return updatedTree;
     });
+      } else {
+        // Add to root level
+        setFileTree(prev => [...prev, fileNode]);
+      }
 
-    toast.success(`LaTeX document "${projectNameWithExtension}" created successfully!`);
-    closeContextMenu();
+      toast.success(`LaTeX file "${projectNameWithExtension}" created successfully!`);
+      setShowTemplateModal(false);
+      setPendingFileName('');
+      setPendingParentFolderId(undefined);
+    } catch (error) {
+      console.error('Error creating new LaTeX file:', error);
+      toast.error('Failed to create LaTeX file');
+    }
   };
 
   // Start editing node name
   const startEditing = (node: FileNode) => {
+    console.log('startEditing called:', { nodeId: node.id, nodeName: node.name });
     setEditingNode(node.id);
     setEditingName(node.name);
     closeContextMenu();
   };
 
   // Save edited name
-  const saveEdit = () => {
+  const saveEdit = async () => {
     if (!editingNode || !editingName.trim()) return;
 
+    console.log('saveEdit called:', { editingNode, editingName });
+
+    try {
+      // Find the node being edited
+      const findNode = (nodes: FileNode[]): FileNode | null => {
+        for (const node of nodes) {
+          if (node.id === editingNode) {
+            return node;
+          }
+          if (node.children) {
+            const found = findNode(node.children);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const nodeToEdit = findNode(fileTree);
+      if (!nodeToEdit) {
+        console.error('Node not found for editing:', editingNode);
+        toast.error('Node not found');
+        return;
+      }
+
+      console.log('Node to edit found:', nodeToEdit);
+
+      // Update tree structure in database first
+      const treeUpdateRes = await fetch('/api/latex-nodes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nodeId: editingNode,
+          name: editingName
+        })
+      });
+
+      console.log('Tree update response:', treeUpdateRes.status, treeUpdateRes.statusText);
+
+      if (!treeUpdateRes.ok) {
+        const errorText = await treeUpdateRes.text();
+        console.error('Failed to update name in tree structure:', errorText);
+        toast.error('Failed to update name in database');
+        return;
+      }
+
+      // Update individual file storage if it's a file
+      if (nodeToEdit.type === 'file') {
+        console.log('Updating file in storage. Node ID:', nodeToEdit.id);
+        
+        if (nodeToEdit.projectData) {
+          console.log('File project data:', nodeToEdit.projectData);
+          const updatedProject = { ...nodeToEdit.projectData, name: editingName };
+          const success = await updateLatexProjectInAPI(updatedProject);
+          if (!success) {
+            console.error('Failed to update file name in storage using project data');
+            // Try using node ID directly
+            const projectData = await getLatexProjectByIdFromAPI(nodeToEdit.id);
+            if (projectData) {
+              console.log('Found project data by node ID:', projectData);
+              const updatedProject2 = { ...projectData, name: editingName };
+              const success2 = await updateLatexProjectInAPI(updatedProject2);
+              if (!success2) {
+                console.error('Failed to update file name in storage using node ID');
+              } else {
+                console.log('File storage updated successfully using node ID');
+              }
+            }
+          } else {
+            console.log('File storage updated successfully using project data');
+          }
+        } else {
+          console.error('File node missing projectData:', nodeToEdit);
+          // Try to find the project data by node ID
+          const projectData = await getLatexProjectByIdFromAPI(nodeToEdit.id);
+          if (projectData) {
+            console.log('Found project data by ID:', projectData);
+            const updatedProject = { ...projectData, name: editingName };
+            const success = await updateLatexProjectInAPI(updatedProject);
+            if (!success) {
+              console.error('Failed to update file name in storage after finding project data');
+            } else {
+              console.log('File storage updated successfully after finding project data');
+            }
+          } else {
+            console.error('Could not find project data for file:', nodeToEdit.id);
+          }
+        }
+      }
+
+      // Update local state
     setFileTree(prev => {
       const updateNode = (nodes: FileNode[]): FileNode[] => {
         return nodes.map(node => {
           if (node.id === editingNode) {
             if (node.type === 'file' && node.projectData) {
               const updatedProject = { ...node.projectData, name: editingName };
-              saveLatexProject(updatedProject, user?.id, user?.role);
               return { ...node, name: editingName, projectData: updatedProject };
             }
             return { ...node, name: editingName };
@@ -311,13 +447,17 @@ This is a new LaTeX document. You can start editing it in the editor.
         });
       };
       const updatedTree = updateNode(prev);
-      saveLatexFileTree(updatedTree, user?.id, user?.role);
       return updatedTree;
     });
 
     setEditingNode(null);
     setEditingName('');
     toast.success('Name updated successfully!');
+      console.log('Rename completed successfully');
+    } catch (error) {
+      console.error('Error updating name:', error);
+      toast.error('Failed to update name');
+    }
   };
 
   // Cancel editing
@@ -327,14 +467,45 @@ This is a new LaTeX document. You can start editing it in the editor.
   };
 
   // Delete node
-  const deleteNode = (node: FileNode) => {
+  const deleteNode = async (node: FileNode) => {
+    try {
+      // Delete from tree structure first
+      const treeDeleteRes = await fetch(`/api/latex-nodes?nodeId=${node.id}`, {
+        method: 'DELETE'
+      });
+
+      if (!treeDeleteRes.ok) {
+        console.error('Failed to delete from tree structure');
+        toast.error('Failed to delete from database');
+        return;
+      }
+
+      // Delete from file storage if it's a file
+      if (node.type === 'file' && node.projectData) {
+        const success = await deleteLatexProjectFromAPI(node.projectData.id);
+        if (!success) {
+          console.error('Failed to delete file from storage');
+          // Continue anyway since tree structure is already deleted
+        }
+      } else if (node.type === 'folder') {
+        // Delete folder and all its contents from file storage
+        const deleteFilesRecursively = async (n: FileNode) => {
+          if (n.type === 'file' && n.projectData) {
+            await deleteLatexProjectFromAPI(n.projectData.id);
+          }
+          if (n.children) {
+            for (const child of n.children) {
+              await deleteFilesRecursively(child);
+            }
+          }
+        };
+        await deleteFilesRecursively(node);
+      }
+
+      // Update local state
     const removeNodeById = (nodes: FileNode[], id: string): FileNode[] => {
       return nodes.filter(n => {
         if (n.id === id) {
-          // Delete project data if it's a file
-          if (n.type === 'file' && n.projectData) {
-            deleteLatexProject(n.projectData.id, user?.id, user?.role);
-          }
           return false;
         }
         if (n.children) {
@@ -344,30 +515,22 @@ This is a new LaTeX document. You can start editing it in the editor.
       });
     };
 
-    if (node.type === 'folder') {
-      const deleteFilesRecursively = (n: FileNode) => {
-        if (n.type === 'file' && n.projectData) {
-          deleteLatexProject(n.projectData.id, user?.id, user?.role);
-        }
-        if (n.children) {
-          n.children.forEach(deleteFilesRecursively);
-        }
-      };
-      deleteFilesRecursively(node);
-    }
-
     setFileTree(prev => {
       const updatedTree = removeNodeById(prev, node.id);
-      saveLatexFileTree(updatedTree, user?.id, user?.role);
       return updatedTree;
     });
     toast.success(`${node.type === 'folder' ? 'Folder' : 'Document'} deleted successfully!`);
     closeContextMenu();
+    } catch (error) {
+      console.error('Error deleting node:', error);
+      toast.error('Failed to delete item');
+    }
   };
 
   // Duplicate project
-  const duplicateProject = (node: FileNode) => {
+  const duplicateProject = async (node: FileNode) => {
     if (node.type === 'file' && node.projectData) {
+      try {
       const duplicatedProject: LatexProject = {
         ...node.projectData,
         id: uuidv4(),
@@ -375,8 +538,29 @@ This is a new LaTeX document. You can start editing it in the editor.
         lastEdited: new Date().toISOString().split('T')[0]
       };
 
-      // Save the duplicated project
-      saveLatexProject(duplicatedProject, user?.id, user?.role);
+        // Save the duplicated project to database
+        const success = await saveLatexProjectToAPI(duplicatedProject, user?.id, user?.role);
+        if (!success) {
+          toast.error('Failed to duplicate document');
+          return;
+        }
+
+        // Also save to the tree structure in database
+        const treeRes = await fetch('/api/latex-nodes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: user?.id,
+            type: 'file',
+            name: duplicatedProject.name,
+            parentId: null,
+            content: duplicatedProject.content
+          })
+        });
+
+        if (!treeRes.ok) {
+          console.error('Failed to add duplicated file to tree structure');
+        }
 
       // Add the duplicated project to the file tree
       const duplicatedFileNode: FileNode = {
@@ -389,11 +573,14 @@ This is a new LaTeX document. You can start editing it in the editor.
 
       setFileTree(prev => {
         const updatedTree = [...prev, duplicatedFileNode];
-        saveLatexFileTree(updatedTree, user?.id, user?.role);
         return updatedTree;
       });
 
       toast.success(`Document "${node.projectData.name}" duplicated successfully!`);
+      } catch (error) {
+        console.error('Error duplicating project:', error);
+        toast.error('Failed to duplicate document');
+      }
     }
     closeContextMenu();
   };
@@ -401,17 +588,359 @@ This is a new LaTeX document. You can start editing it in the editor.
   // Handle keyboard events for editing
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
+      e.preventDefault();
       saveEdit();
     } else if (e.key === 'Escape') {
+      e.preventDefault();
       cancelEdit();
     }
+    // For all other keys (including space), let the default behavior happen
   };
 
   // Handle refresh
-  const handleRefresh = () => {
-    // Only refresh if explicitly requested, don't reload the entire tree
-    if (onRefresh) {
-      onRefresh();
+  const handleRefresh = async () => {
+    setIsLoading(true);
+    try {
+      // Reload the file tree from database
+      await loadFileTree();
+      toast.success('File tree refreshed successfully!');
+    } catch (error) {
+      console.error('Error refreshing file tree:', error);
+      toast.error('Failed to refresh file tree');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Convert HTML to LaTeX (simplified version for Word file conversion)
+  const convertHtmlToLatex = (html: string): string => {
+    // Create a temporary div to parse HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = html;
+
+    // Function to escape special LaTeX characters
+    const escapeLatexSpecialChars = (text: string): string => {
+      return text
+        .replace(/\\/g, '\\textbackslash ')
+        .replace(/\$/g, '\\$')
+        .replace(/%/g, '\\%')
+        .replace(/&/g, '\\&')
+        .replace(/#/g, '\\#')
+        .replace(/_/g, '\\_')
+        .replace(/~/g, '\\textasciitilde ')
+        .replace(/\^/g, '\\textasciicircum ')
+        .replace(/\{/g, '\\{')
+        .replace(/\}/g, '\\}');
+    };
+
+    // Process child nodes of an element
+    const processChildNodes = (element: HTMLElement): string => {
+      let result = '';
+      for (const child of Array.from(element.childNodes)) {
+        result += processNode(child);
+      }
+      return result;
+    };
+
+    // Convert HTML table to LaTeX tabular environment
+    const convertTableToLatex = (tableElement: HTMLElement): string => {
+      let result = '\\begin{table}[h!]\n  \\centering\n';
+
+      const rows = tableElement.querySelectorAll('tr');
+      if (rows.length === 0) return '';
+
+      const firstRow = rows[0];
+      const columns = firstRow.querySelectorAll('td, th').length;
+      if (columns === 0) return '';
+
+      let colSpec = '|';
+      for (let i = 0; i < columns; i++) {
+        colSpec += 'c|';
+      }
+
+      result += `  \\begin{tabular}{${colSpec}}\n    \\hline\n`;
+
+      rows.forEach((row) => {
+        const cells = row.querySelectorAll('td, th');
+        if (cells.length > 0) {
+          let rowContent = '    ';
+          cells.forEach((cell, cellIndex) => {
+            const cellContent = cell.textContent?.trim() || '';
+            rowContent += escapeLatexSpecialChars(cellContent);
+            if (cellIndex < cells.length - 1) {
+              rowContent += ' & ';
+            }
+          });
+          rowContent += ' \\\\\n    \\hline\n';
+          result += rowContent;
+        }
+      });
+
+      result += '  \\end{tabular}\n';
+      result += '  \\caption{Imported Table}\n';
+      result += '\\end{table}\n\n';
+
+      return result;
+    };
+
+    // Process individual nodes
+    const processNode = (node: Node): string => {
+      let result = '';
+
+      switch (node.nodeType) {
+        case Node.TEXT_NODE:
+          if (node.textContent && node.textContent.trim()) {
+            result += escapeLatexSpecialChars(node.textContent.trim());
+          }
+          break;
+
+        case Node.ELEMENT_NODE:
+          const element = node as HTMLElement;
+          const tagName = element.tagName.toLowerCase();
+
+          switch (tagName) {
+            case 'h1':
+              result += `\\section{${processChildNodes(element)}}\n\n`;
+              break;
+
+            case 'h2':
+              result += `\\subsection{${processChildNodes(element)}}\n\n`;
+              break;
+
+            case 'h3':
+              result += `\\subsubsection{${processChildNodes(element)}}\n\n`;
+              break;
+
+            case 'p':
+              const paragraphContent = processChildNodes(element);
+              if (paragraphContent.trim()) {
+                result += `${paragraphContent}\n\n`;
+              }
+              break;
+
+            case 'strong':
+            case 'b':
+              result += `\\textbf{${processChildNodes(element)}}`;
+              break;
+
+            case 'em':
+            case 'i':
+              result += `\\textit{${processChildNodes(element)}}`;
+              break;
+
+            case 'u':
+              result += `\\underline{${processChildNodes(element)}}`;
+              break;
+
+            case 'ul':
+              result += `\\begin{itemize}\n${processChildNodes(element)}\\end{itemize}\n\n`;
+              break;
+
+            case 'ol':
+              result += `\\begin{enumerate}\n${processChildNodes(element)}\\end{enumerate}\n\n`;
+              break;
+
+            case 'li':
+              result += `  \\item ${processChildNodes(element)}\n`;
+              break;
+
+            case 'table':
+              result += convertTableToLatex(element);
+              break;
+
+            case 'br':
+              result += ' \\\\ ';
+              break;
+
+            case 'hr':
+              result += `\\par\\noindent\\rule{\\textwidth}{0.4pt}\n\n`;
+              break;
+
+            default:
+              result += processChildNodes(element);
+          }
+          break;
+      }
+
+      return result;
+    };
+
+    // Process the HTML and return LaTeX
+    let latex = '';
+    for (const child of Array.from(tempDiv.childNodes)) {
+      latex += processNode(child);
+    }
+
+    // Clean up the LaTeX
+    latex = latex
+      .replace(/\n\s*\n\s*\n/g, '\n\n')
+      .replace(/\\textbackslash{}/g, '\\textbackslash ')
+      .replace(/\\textasciitilde{}/g, '\\textasciitilde ')
+      .replace(/\\textasciicircum{}/g, '\\textasciicircum ');
+
+    return latex;
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+
+    try {
+      for (const file of Array.from(files)) {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        
+        if (ext === 'tex' || ext === 'latex') {
+          // Handle LaTeX files
+          const content = await file.text();
+
+    const newProject: LatexProject = {
+      id: uuidv4(),
+            name: file.name,
+      lastEdited: new Date().toISOString().split('T')[0],
+      createdBy: user?.id,
+      role: user?.role,
+            content: content
+          };
+
+          // Save the project to database
+          const success = await saveLatexProjectToAPI(newProject, user?.id, user?.role);
+          if (!success) {
+            toast.error(`Failed to upload ${file.name}`);
+            continue;
+          }
+
+          // Also save to the tree structure in database
+          const treeRes = await fetch('/api/latex-nodes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: user?.id,
+              type: 'file',
+              name: newProject.name,
+              parentId: null,
+              content: newProject.content
+            })
+          });
+
+          if (!treeRes.ok) {
+            console.error('Failed to add uploaded file to tree structure');
+          }
+
+          // Add the new project to the file tree
+          const newFileNode: FileNode = {
+            id: newProject.id,
+            name: newProject.name,
+            type: 'file',
+            projectData: newProject,
+            path: newProject.name
+          };
+
+          setFileTree(prev => {
+            const updatedTree = [...prev, newFileNode];
+            return updatedTree;
+          });
+
+          toast.success(`LaTeX file "${file.name}" uploaded successfully!`);
+        } else if (ext === 'doc' || ext === 'docx') {
+          // Handle Word files - convert to LaTeX
+          try {
+            const arrayBuffer = await file.arrayBuffer();
+            
+            // Use mammoth to convert docx to HTML
+            const result = await mammoth.convertToHtml({ arrayBuffer });
+            const html = result.value;
+
+            // Extract title from filename
+            const fileName = file.name.replace(/\.(doc|docx)$/i, '');
+            const documentTitle = fileName || 'Imported Document';
+
+            // Convert HTML to LaTeX
+            const latex = convertHtmlToLatex(html);
+
+            // Create a complete LaTeX document
+            const fullLatex = `\\documentclass{article}
+\\usepackage{amsmath}
+\\usepackage{amssymb}
+\\usepackage{graphicx}
+\\usepackage{hyperref}
+
+\\title{${documentTitle}}
+\\author{${user?.name || ''}}
+\\date{\\today}
+
+\\begin{document}
+
+\\maketitle
+
+${latex}
+
+\\end{document}`;
+
+            // Create new project with converted content
+            const newProject: LatexProject = {
+              id: uuidv4(),
+              name: `${fileName}.tex`,
+              lastEdited: new Date().toISOString().split('T')[0],
+              createdBy: user?.id,
+              role: user?.role,
+              content: fullLatex
+            };
+
+            // Save the project to database
+            const success = await saveLatexProjectToAPI(newProject, user?.id, user?.role);
+            if (!success) {
+              toast.error(`Failed to convert and upload ${file.name}`);
+              continue;
+            }
+
+            // Also save to the tree structure in database
+            const treeRes = await fetch('/api/latex-nodes', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: user?.id,
+                type: 'file',
+                name: newProject.name,
+                parentId: null,
+                content: newProject.content
+              })
+            });
+
+            if (!treeRes.ok) {
+              console.error('Failed to add converted file to tree structure');
+            }
+
+            // Add the new project to the file tree
+            const newFileNode: FileNode = {
+            id: newProject.id,
+            name: newProject.name,
+            type: 'file',
+            projectData: newProject,
+              path: newProject.name
+            };
+
+            setFileTree(prev => {
+              const updatedTree = [...prev, newFileNode];
+              return updatedTree;
+            });
+
+            toast.success(`Word file "${file.name}" converted to LaTeX and uploaded successfully!`);
+          } catch (error) {
+            console.error('Error converting Word file:', error);
+            toast.error(`Failed to convert Word file "${file.name}"`);
+          }
+        } else {
+          toast.error(`File "${file.name}" is not a valid LaTeX or Word file (.tex, .latex, .doc, .docx)`);
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast.error('Failed to upload file');
+    }
+
+    // Reset the input
+    if (uploadInputRef.current) {
+      uploadInputRef.current.value = '';
     }
   };
 
@@ -437,93 +966,124 @@ This is a new LaTeX document. You can start editing it in the editor.
   };
 
   // Create new folder
-  const createNewFolder = () => {
-    const folderName = getUniqueFolderName('New-LaTeX-Folder');
+  const createNewFolder = async (parentFolderId?: string) => {
+    const folderName = prompt('Enter folder name:');
+    if (!folderName?.trim()) return;
+
+    // Check if folder name already exists
+    const checkName = (nodes: FileNode[]): boolean => {
+      for (const node of nodes) {
+        if (node.name === folderName) {
+          return true; // Name exists
+        }
+        if (node.children) {
+          if (checkName(node.children)) {
+            return true; // Name exists in children
+          }
+        }
+      }
+      return false; // Name doesn't exist
+    };
+
+    if (checkName(fileTree)) {
+      toast.error(`A folder with the name "${folderName}" already exists`);
+      return;
+    }
+
+    const folderId = uuidv4();
+    
+    try {
+      // Save folder to database using the nodes API
+      const res = await fetch('/api/latex-nodes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId: user?.id,
+          type: 'folder',
+          name: folderName,
+          parentId: parentFolderId || null
+        })
+      });
+
+      if (!res.ok) {
+        toast.error('Failed to create folder');
+        return;
+      }
+
     const newFolder: FileNode = {
-      id: uuidv4(),
+        id: folderId,
       name: folderName,
       type: 'folder',
+        parentId: parentFolderId || undefined,
       children: [] as FileNode[],
-      path: folderName
+        path: parentFolderId ? `${parentFolderId}/${folderName}` : folderName
     };
 
     setFileTree(prev => {
-      const updatedTree = [...prev, newFolder];
-      saveLatexFileTree(updatedTree, user?.id, user?.role);
-      return updatedTree;
-    });
-    toast.success(`Folder "${folderName}" created successfully!`);
-    closeContextMenu();
-  };
-
-  // Create new LaTeX file
-  const createNewLatexFile = () => {
-    const fileName = prompt('Enter LaTeX file name:');
-    if (!fileName?.trim()) return;
-
-    // Ensure the file has .tex extension
-    const fileNameWithExtension = fileName.endsWith('.tex') ? fileName : `${fileName}.tex`;
-
-    const newProject: LatexProject = {
-      id: uuidv4(),
-      name: fileNameWithExtension,
-      lastEdited: new Date().toISOString().split('T')[0],
-      createdBy: user?.id,
-      role: user?.role,
-      content: `\\documentclass{article}
-\\usepackage{amsmath}
-\\usepackage{amssymb}
-\\usepackage{graphicx}
-\\usepackage{hyperref}
-
-\\title{${fileNameWithExtension.replace('.tex', '')}}
-\\author{${user?.name || ''}}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\section{Introduction}
-This is a new LaTeX document. You can start editing it in the editor.
-
-\\end{document}`
-    };
-
-    const addFileToFolder = (nodes: FileNode[]): FileNode[] =>
-      nodes.map(node => {
-        if (node.id === contextMenu.node?.id && node.type === 'folder') {
-          const fileNode: FileNode = {
-            id: newProject.id,
-            name: newProject.name,
-            type: 'file',
-            projectData: newProject,
-            parentId: node.id,
-            path: `${node.path}/${newProject.name}`
-          };
+        if (parentFolderId) {
+          // Add to specific folder
+          const addFolderToParent = (nodes: FileNode[]): FileNode[] =>
+            nodes.map(node => {
+              if (node.id === parentFolderId && node.type === 'folder') {
           return {
             ...node,
-            children: [...(node.children || []), fileNode]
+                  children: [...(node.children || []), newFolder]
           };
         }
         if (node.children) {
-          return { ...node, children: addFileToFolder(node.children) };
+                return { ...node, children: addFolderToParent(node.children) };
         }
         return node;
       });
 
-    setFileTree(prev => {
-      const updatedTree = addFileToFolder(prev);
-      saveLatexFileTree(updatedTree, user?.id, user?.role);
+          const updatedTree = addFolderToParent(prev);
       return updatedTree;
+        } else {
+          // Add to root level
+      const updatedTree = [...prev, newFolder];
+      return updatedTree;
+        }
     });
-    saveLatexProject(newProject, user?.id, user?.role);
-    toast.success(`LaTeX file "${fileNameWithExtension}" created successfully!`);
+      
+    toast.success(`Folder "${folderName}" created successfully!`);
     closeContextMenu();
+    } catch (error) {
+      console.error('Error creating folder:', error);
+      toast.error('Failed to create folder');
+    }
+  };
+
+  // Create new LaTeX file
+  const createNewLatexFile = async (parentFolderId?: string) => {
+    const fileName = prompt('Enter LaTeX file name:');
+    if (!fileName?.trim()) return;
+
+    // Store the file name and show template selection modal
+    setPendingFileName(fileName);
+    setPendingParentFolderId(parentFolderId);
+    setShowTemplateModal(true);
   };
 
   // Handle drag and drop
-  const handleMove = ({ dragIds, parentId, index }: { dragIds: string[]; parentId: string | null; index: number }) => {
+  const handleMove = async ({ dragIds, parentId, index }: { dragIds: string[]; parentId: string | null; index: number }) => {
+    try {
+      // Update database first
+      for (const dragId of dragIds) {
+        const res = await fetch('/api/latex-nodes', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nodeId: dragId,
+            parentId: parentId
+          })
+        });
+        
+        if (!res.ok) {
+          console.error('Failed to update node position in database');
+        }
+      }
+
+      // Update local state
     setFileTree(prev => {
       const findAndRemove = (nodes: FileNode[], ids: string[]): [FileNode[], FileNode[]] => {
         const remaining: FileNode[] = [];
@@ -569,9 +1129,21 @@ This is a new LaTeX document. You can start editing it in the editor.
 
       const [remaining, removed] = findAndRemove(prev, dragIds);
       const updatedTree = insertAt(remaining, parentId, removed, index);
-      saveLatexFileTree(updatedTree, user?.id, user?.role);
+        
+        // Show success message for move operation
+        if (removed.length > 0) {
+          const itemType = removed[0].type === 'folder' ? 'folder' : 'document';
+          const itemName = removed[0].name;
+          const destination = parentId ? 'folder' : 'root level';
+          toast.success(`${itemType} "${itemName}" moved to ${destination} successfully!`);
+        }
+        
       return updatedTree;
     });
+    } catch (error) {
+      console.error('Error moving node:', error);
+      toast.error('Failed to move item');
+    }
   };
 
   // Close context menu when clicking outside
@@ -587,6 +1159,31 @@ This is a new LaTeX document. You can start editing it in the editor.
       document.removeEventListener('click', handleClickOutside);
     };
   }, [contextMenu.show]);
+
+  // Reload file tree when component becomes visible or when window gains focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden && user) {
+        // Reload the file tree when the page becomes visible
+        loadFileTree();
+      }
+    };
+
+    const handleFocus = () => {
+      if (user) {
+        // Reload the file tree when the window gains focus
+        loadFileTree();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user, loadFileTree]);
 
   return (
     <div className={`relative h-full transition-all duration-300 ${collapsed ? 'w-16' : 'w-64'} bg-white border-r border-gray-200 flex flex-col`}>
@@ -624,142 +1221,74 @@ This is a new LaTeX document. You can start editing it in the editor.
       ) : (
         <>
           {/* Header */}
-          <div className="p-3 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-medium text-gray-700">LaTeX Documents</h3>
-              <div className="flex items-center space-x-1">
-                {/* Hidden file input for file upload */}
-                <input
-                  type="file"
-                  id="latex-upload-input"
-                  ref={uploadInputRef}
-                  className="hidden"
-                  accept=".tex,.latex"
-                  multiple
-                  onClick={e => { (e.target as HTMLInputElement).value = ''; }}
-                  onChange={(e) => {
-                    const files = e.target.files;
-                    if (!files || files.length === 0) return;
-                    Array.from(files).forEach(file => {
-                      const ext = file.name.split('.').pop()?.toLowerCase();
-                      if (ext === 'tex' || ext === 'latex') {
-                        onFileUpload(file, ext as 'tex' | 'latex');
-                      }
-                    });
-                  }}
-                />
+          <div className="p-4 border-b border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-gray-800">LaTeX Documents</h2>
                 <button
-                  onClick={() => {
-                    if (uploadInputRef.current) {
-                      uploadInputRef.current.click();
-                    }
-                  }}
-                  className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
-                  title="Import LaTeX Document"
-                >
-                  <HiUpload className="w-4 h-4" />
+            onClick={handleRefresh}
+            className="p-2 hover:bg-gray-100 rounded"
+            title="Refresh"
+          >
+            <HiRefresh className="w-5 h-5 text-gray-600" />
                 </button>
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex space-x-2">
                 <button
-                  onClick={createNewFolder}
-                  className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
+            onClick={() => createNewFolder()}
+            className="flex-1 flex items-center justify-center p-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-all duration-200 shadow-sm hover:shadow-md"
                   title="New Folder"
                 >
-                  <HiPlus className="w-4 h-4" />
-                </button>
+            <div className="relative">
+              <HiFolderOpen className="w-6 h-6" />
+              <HiPlus className="w-3 h-3 absolute -top-1 -right-1 bg-blue-500 rounded-full" />
               </div>
-            </div>
-          </div>
-          {/* File Tree */}
-          <div className="flex-1 overflow-auto">
-            {fileTree.length === 0 ? (
-              <div className="p-4 text-center text-gray-500">
-                <HiFolder className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">No LaTeX documents found</p>
-                <div className="mt-2 flex flex-col items-center space-y-2">
+          </button>
+          
+          {/* New LaTeX File Button */}
                   <button
-                    onClick={createNewFolder}
-                    className="text-xs text-blue-600 hover:text-blue-800 underline"
+            onClick={() => createNewProject()}
+            className="flex-1 flex items-center justify-center p-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-all duration-200 shadow-sm hover:shadow-md"
+            title="New LaTeX File"
                   >
-                    Create New Folder
+            <div className="relative">
+              <HiDocumentText className="w-6 h-6" />
+              <HiPlus className="w-3 h-3 absolute -top-1 -right-1 bg-green-500 rounded-full" />
+            </div>
                   </button>
-                  <label className="text-xs text-blue-600 hover:text-blue-800 underline cursor-pointer">
+
+          {/* Upload LaTeX button */}
+          <div className="flex-1">
                     <input
+              ref={uploadInputRef}
                       type="file"
-                      {...({ webkitdirectory: "true", directory: "true" } as any)}
-                      multiple
+                      accept=".tex,.latex,.docx,.doc"
+              onChange={handleFileUpload}
                       className="hidden"
-                      accept=".tex,.latex"
-                      onChange={async (e) => {
-                        const files = e.target.files;
-                        if (!files || files.length === 0) return;
-                        // Simulate import: create a folder with the name of the first file's directory
-                        const firstFile = files[0];
-                        const folderPath = (firstFile as any).webkitRelativePath.split('/')[0];
-                        const newFolder: FileNode = {
-                          id: uuidv4(),
-                          name: folderPath,
-                          type: 'folder',
-                          children: [] as FileNode[],
-                          path: folderPath
-                        };
-                        // Add only LaTeX files as children
-                        Array.from(files).forEach((file) => {
-                          const fileName = file.name;
-                          const ext = fileName.split('.').pop()?.toLowerCase();
-                          if (ext === 'tex' || ext === 'latex') {
-                            // Create a proper LaTeX project for this file
-                            const newProject: LatexProject = {
-                              id: uuidv4(),
-                              name: fileName,
-                              lastEdited: new Date().toISOString().split('T')[0],
-                              createdBy: user?.id,
-                              role: user?.role,
-                              content: `\\documentclass{article}
-\\usepackage{amsmath}
-\\usepackage{amssymb}
-\\usepackage{graphicx}
-\\usepackage{hyperref}
-
-\\title{${fileName.replace('.tex', '').replace('.latex', '')}}
-\\author{${user?.name || ''}}
-\\date{\\today}
-
-\\begin{document}
-
-\\maketitle
-
-\\section{Introduction}
-This is an imported LaTeX document. You can edit it in the editor.
-
-\\end{document}`
-                            };
-
-                            // Save the project to storage
-                            saveLatexProject(newProject, user?.id, user?.role);
-
-                            if (newFolder.children) {
-                              newFolder.children.push({
-                                id: newProject.id,
-                                name: fileName,
-                                type: 'file',
-                                parentId: newFolder.id,
-                                path: `${folderPath}/${fileName}`,
-                                projectData: newProject
-                              });
-                            }
-                          }
-                        });
-                        setFileTree(prev => {
-                          const updatedTree = [...prev, newFolder];
-                          saveLatexFileTree(updatedTree, user?.id, user?.role);
-                          return updatedTree;
-                        });
-                        toast.success(`LaTeX folder '${folderPath}' imported!`);
-                      }}
-                    />
-                    Import LaTeX Folder
-                  </label>
+            />
+            <button
+              onClick={() => uploadInputRef.current?.click()}
+              className="w-full flex items-center justify-center p-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-all duration-200 shadow-sm hover:shadow-md"
+              title="Upload LaTeX or Word File"
+            >
+              <HiCloudUpload className="w-6 h-6" />
+            </button>
                 </div>
+        </div>
+      </div>
+
+      {/* File tree */}
+      <div className="flex-1 overflow-auto">
+        {isLoading ? (
+          <div className="flex items-center justify-center p-4">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+          </div>
+        ) : fileTree.length === 0 ? (
+          <div className="p-4 text-center text-gray-500">
+            <HiFolder className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+            <p>No files or folders</p>
+            <p className="text-sm">Create a new folder or file to get started</p>
               </div>
             ) : (
               <Tree
@@ -825,8 +1354,16 @@ This is an imported LaTeX document. You can edit it in the editor.
                         type="text"
                         value={editingName}
                         onChange={(e) => setEditingName(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                        onBlur={saveEdit}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          handleKeyDown(e);
+                        }}
+                        onKeyPress={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onKeyUp={(e) => {
+                          e.stopPropagation();
+                        }}
                         className="flex-1 text-sm bg-white border border-blue-500 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
                         autoFocus
                       />
@@ -836,143 +1373,95 @@ This is an imported LaTeX document. You can edit it in the editor.
                       </span>
                     )}
                     {/* Action buttons (visible on hover) */}
-                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-1">
+                {!editingNode && (
+                  <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity bg-white border border-gray-200 rounded px-2 py-1 shadow-sm">
+                    {/* View/Open button for files */}
                       {node.data.type === 'file' && (
-                        <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                          handleNodeClick(node.data);
+                            }}
+                        className="p-1 hover:bg-blue-100 rounded transition-colors"
+                        title="Open File"
+                          >
+                        <HiEye className="w-4 h-4 text-blue-700" />
+                          </button>
+                    )}
+
+                    {/* Create new item buttons (for folders) */}
+                    {node.data.type === 'folder' && (
+                      <>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            createNewFolder(node.data.id);
+                            }}
+                          className="p-1 hover:bg-yellow-100 rounded transition-colors"
+                          title="Create Subfolder"
+                          >
+                          <HiFolderAdd className="w-4 h-4 text-yellow-700" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                            createNewLatexFile(node.data.id);
+                            }}
+                          className="p-1 hover:bg-green-100 rounded transition-colors"
+                          title="Create LaTeX File in Folder"
+                          >
+                          <HiDocumentAdd className="w-4 h-4 text-green-700" />
+                          </button>
+                        </>
+                      )}
+
+                    {/* Edit/Rename button */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               startEditing(node.data);
                             }}
-                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
+                      className="p-1 hover:bg-gray-100 rounded transition-colors"
                             title="Rename"
                           >
-                            <HiPencil className="w-3 h-3" />
+                      <HiPencil className="w-4 h-4 text-gray-700" />
                           </button>
+                    
+                    {/* Duplicate button (for files) */}
+                    {node.data.type === 'file' && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              duplicateProject(node.data);
-                            }}
-                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
-                            title="Duplicate"
-                          >
-                            <HiDuplicate className="w-3 h-3" />
+                          duplicateProject(node.data);
+                        }}
+                        className="p-1 hover:bg-purple-100 rounded transition-colors"
+                        title="Duplicate"
+                      >
+                        <HiDuplicate className="w-4 h-4 text-purple-700" />
                           </button>
+                    )}
+                    
+                    {/* Delete button */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               deleteNode(node.data);
                             }}
-                            className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
+                      className="p-1 hover:bg-red-100 rounded transition-colors"
                             title="Delete"
                           >
-                            <HiTrash className="w-3 h-3" />
+                      <HiTrash className="w-4 h-4 text-red-700" />
                           </button>
-                        </>
-                      )}
-                      {node.data.type === 'folder' && (
-                        <>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              startEditing(node.data);
-                            }}
-                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
-                            title="Rename"
-                          >
-                            <HiPencil className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              const fileName = prompt('Enter LaTeX file name:');
-                              if (!fileName?.trim()) return;
-                              // Ensure the file has .tex extension
-                              const fileNameWithExtension = fileName.endsWith('.tex') ? fileName : `${fileName}.tex`;
-                              const newProject: LatexProject = {
-                                id: uuidv4(),
-                                name: fileNameWithExtension,
-                                lastEdited: new Date().toISOString().split('T')[0],
-                                createdBy: user?.id,
-                                role: user?.role,
-                                content: `\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{${fileNameWithExtension.replace('.tex', '')}}\n\\author{${user?.name || ''}}\n\\date{\\today}\n\n\\begin{document}\n\n\\maketitle\n\n\\section{Introduction}\nThis is a new LaTeX document. You can start editing it in the editor.\n\n\\end{document}`
-                              };
-                              const addFileToFolder = (nodes: FileNode[]): FileNode[] =>
-                                nodes.map(nodeItem => {
-                                  if (nodeItem.id === node.data.id && nodeItem.type === 'folder') {
-                                    const fileNode: FileNode = {
-                                      id: newProject.id,
-                                      name: newProject.name,
-                                      type: 'file',
-                                      parentId: nodeItem.id,
-                                      path: `${nodeItem.path}/${newProject.name}`,
-                                      projectData: newProject
-                                    };
-                                    return {
-                                      ...nodeItem,
-                                      children: [...(nodeItem.children || []), fileNode]
-                                    };
-                                  }
-                                  if (nodeItem.children) {
-                                    return { ...nodeItem, children: addFileToFolder(nodeItem.children) };
-                                  }
-                                  return nodeItem;
-                                });
-                              setFileTree(prev => {
-                                const updatedTree = addFileToFolder(prev);
-                                saveLatexFileTree(updatedTree, user?.id, user?.role);
-                                return updatedTree;
-                              });
-                              saveLatexProject(newProject, user?.id, user?.role);
-                              toast.success(`LaTeX file "${fileNameWithExtension}" created successfully!`);
-                            }}
-                            className="p-1 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded"
-                            title="Add LaTeX File"
-                          >
-                            <HiPlus className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteNode(node.data);
-                            }}
-                            className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"
-                            title="Delete"
-                          >
-                            <HiTrash className="w-3 h-3" />
-                          </button>
-                        </>
-                      )}
-                      {node.data.type === 'folder' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            // Show context menu at the button position
-                            const rect = (e.target as HTMLElement).getBoundingClientRect();
-                            setContextMenu({
-                              show: true,
-                              x: rect.right,
-                              y: rect.bottom,
-                              node: node.data
-                            });
-                          }}
-                          className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded"
-                          title="Options"
-                        >
-                          <HiDotsVertical className="w-3 h-3" />
-                        </button>
-                      )}
-                    </div>
+                  </div>
+                )}
                   </div>
                 )}
               </Tree>
             )}
           </div>
-        </>
-      )}
+
       {/* Context Menu */}
-      {!collapsed && contextMenu.show && (
+      {contextMenu.show && (
         <div
           className="fixed z-50 bg-white border border-gray-200 rounded-lg shadow-lg py-1 min-w-[160px]"
           style={{ left: contextMenu.x, top: contextMenu.y }}
@@ -980,7 +1469,14 @@ This is an imported LaTeX document. You can edit it in the editor.
           {contextMenu.node?.type === 'folder' && (
             <>
               <button
-                onClick={createNewLatexFile}
+                onClick={() => createNewFolder(contextMenu.node?.id)}
+                className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center"
+              >
+                <HiFolderAdd className="w-4 h-4 mr-2" />
+                Create Subfolder
+              </button>
+              <button
+                onClick={() => createNewLatexFile(contextMenu.node?.id)}
                 className="w-full px-4 py-2 text-left text-sm hover:bg-gray-100 flex items-center"
               >
                 <HiPlus className="w-4 h-4 mr-2" />
@@ -1030,11 +1526,99 @@ This is an imported LaTeX document. You can edit it in the editor.
         </div>
       )}
       {/* Overlay to close context menu */}
-      {!collapsed && contextMenu.show && (
+      {contextMenu.show && (
         <div
           className="fixed inset-0 z-40"
           onClick={closeContextMenu}
         />
+      )}
+
+      {/* Template Selection Modal */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  Select Template for "{pendingFileName}"
+                </h3>
+                <button
+                  onClick={() => {
+                    setShowTemplateModal(false);
+                    setPendingFileName('');
+                    setPendingParentFolderId(undefined);
+                  }}
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <p className="text-sm text-gray-600 mt-1">
+                Choose a template to start your LaTeX document
+              </p>
+            </div>
+
+            {/* Modal Body */}
+            <div className="px-6 py-4 overflow-y-auto max-h-[60vh]">
+              <div className="grid gap-4">
+                {templates.map((template) => (
+                  <button
+                    key={template.id}
+                    onClick={() => createNewProjectWithTemplate(template)}
+                    className="w-full text-left p-4 border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 group"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h4 className="font-medium text-gray-900 group-hover:text-blue-700">
+                            {template.name}
+                          </h4>
+                          {template.isDefault && (
+                            <span className="px-2 py-1 text-xs bg-green-100 text-green-700 rounded-full">
+                              Default
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm text-gray-600 mb-2">{template.description}</p>
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
+                            {template.category}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowTemplateModal(false);
+                    setPendingFileName('');
+                    setPendingParentFolderId(undefined);
+                  }}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+        </>
       )}
     </div>
   );

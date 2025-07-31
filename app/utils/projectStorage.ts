@@ -1,11 +1,18 @@
 export interface BpmnProject {
     id: string;
     name: string;
-    lastEdited: string;
+    lastEdited?: string;
     xml?: string;
+    content?: string; // BPMN XML content (new field for hierarchical system)
     preview?: string;
     createdBy?: string; // User ID of project creator
     role?: string;      // Role of the creator
+    processMetadata?: {
+        processName: string;
+        description: string;
+        processOwner: string;
+        processManager: string;
+    };
 }
 
 const BASE_STORAGE_KEY = 'bpmn_projects';
@@ -86,13 +93,13 @@ export function saveProject(project: BpmnProject, userId?: string, role?: string
             projects[existingIndex] = {
                 ...projects[existingIndex],
                 ...projectWithUser,
-                lastEdited: new Date().toISOString().split('T')[0] // Update last edited date
+                lastEdited: new Date().toISOString() // Update last edited date
             };
         } else {
             // Add new project
             projects.push({
                 ...projectWithUser,
-                lastEdited: new Date().toISOString().split('T')[0]
+                lastEdited: new Date().toISOString()
             });
         }
 
@@ -130,5 +137,110 @@ export function getProjectById(projectId: string, userId?: string, role?: string
     } catch (err) {
         console.error('Error retrieving project:', err);
         return null;
+    }
+}
+
+/**
+ * Async: Gets all saved BPMN projects from the backend API for a specific user
+ */
+export async function getSavedProjectsFromAPI(userId?: string, role?: string): Promise<BpmnProject[]> {
+  if (!userId || !role) return [];
+  // Not implemented in backend yet, so return [] for now
+  return [];
+}
+
+/**
+ * Async: Gets a specific BPMN project by fileId from the backend API
+ */
+export async function getProjectByIdFromAPI(fileId: string): Promise<BpmnProject | null> {
+  if (!fileId) return null;
+  try {
+    const res = await fetch(`/api/bpmn?fileId=${fileId}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    
+    console.log('API response data:', data);
+    console.log('Process metadata from API:', data.processMetadata);
+    
+    // Transform the API response to match our BpmnProject interface
+    const transformedProject = {
+      id: data._id || data.id,
+      name: data.name,
+      lastEdited: data.updatedAt || new Date().toISOString(),
+      xml: data.content,
+      preview: data.preview,
+      createdBy: data.userId,
+      role: data.role,
+      processMetadata: data.processMetadata || {
+        processName: '',
+        description: '',
+        processOwner: '',
+        processManager: '',
+      }
+    };
+    
+    console.log('Transformed project:', transformedProject);
+    return transformedProject;
+  } catch (err) {
+    console.error('Error fetching BPMN project from API:', err);
+    return null;
+  }
+}
+
+/**
+ * Async: Saves a BPMN project to the backend API (create or update)
+ */
+export async function saveProjectToAPI(project: BpmnProject, userId?: string, role?: string): Promise<{ success: boolean; fileId?: string; error?: string }> {
+  if (!userId || !project.name || !project.xml) {
+    return { success: false, error: 'Missing required fields' };
+  }
+  
+  try {
+    console.log('Saving project to API:', { userId, name: project.name, fileId: project.id });
+    
+    const res = await fetch('/api/bpmn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId,
+        name: project.name,
+        type: 'xml',
+        content: project.xml,
+        fileId: project.id || undefined,
+        processMetadata: project.processMetadata || {
+          processName: '',
+          description: '',
+          processOwner: '',
+          processManager: '',
+        }
+      })
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      console.log('Project saved successfully:', data);
+      return { success: true, fileId: data.fileId || data._id };
+    } else {
+      const errorData = await res.json().catch(() => ({}));
+      console.error('API error saving project:', errorData);
+      return { success: false, error: errorData.error || 'Failed to save project' };
+    }
+  } catch (err) {
+    console.error('Error saving BPMN project to API:', err);
+    return { success: false, error: (err as Error).message || 'Network error' };
+  }
+}
+
+/**
+ * Async: Deletes a BPMN project from the backend API
+ */
+export async function deleteProjectFromAPI(fileId: string): Promise<boolean> {
+  if (!fileId) return false;
+  try {
+    const res = await fetch(`/api/bpmn?fileId=${fileId}`, { method: 'DELETE' });
+    return res.ok;
+  } catch (err) {
+    console.error('Error deleting BPMN project from API:', err);
+    return false;
     }
 } 

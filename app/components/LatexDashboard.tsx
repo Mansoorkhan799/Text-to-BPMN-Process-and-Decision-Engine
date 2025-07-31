@@ -2,8 +2,20 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import LatexFilesList from './LatexFilesList';
 
-const LatexDashboard = () => {
+interface User {
+  id: string;
+  email: string;
+  name?: string;
+  role?: string;
+}
+
+interface LatexDashboardProps {
+  user: User | null;
+}
+
+const LatexDashboard: React.FC<LatexDashboardProps> = ({ user }) => {
     const router = useRouter();
 
     const handleEditorClick = () => {
@@ -22,7 +34,7 @@ const LatexDashboard = () => {
             </div>
 
             {/* Dotted rectangle container */}
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 h-full">
+            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-8">
                 <div className="space-y-4">
                     {/* LaTeX Editor */}
                     <div
@@ -45,6 +57,9 @@ const LatexDashboard = () => {
                     </div>
                 </div>
             </div>
+
+            {/* LaTeX Files List */}
+            <LatexFilesList user={user} />
         </div>
     );
 };

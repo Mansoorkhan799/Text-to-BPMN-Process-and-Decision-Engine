@@ -1,22 +1,51 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import LatexEditor from './LatexEditor';
 import VisualLatexEditor from './VisualLatexEditor';
 import EditorModeSwitch from './ui/EditorModeSwitch';
 import LatexFileTree from './LatexFileTree';
 import { cleanLatexContent } from '../utils/latexCleaner';
-import { LatexProject, saveLatexProject, getSavedLatexProjects } from '../utils/latexProjectStorage';
-import { getLatexFileTree, saveLatexFileTree } from '../utils/fileTreeStorage';
+import { 
+  LatexProject, 
+  saveLatexProject, 
+  getSavedLatexProjects,
+  saveLatexProjectToAPI,
+  updateLatexProjectInAPI
+} from '../utils/latexProjectStorage';
+import { 
+  getLatexFileTree, 
+  saveLatexFileTree,
+  getLatexTreeFromAPI
+} from '../utils/fileTreeStorage';
 import { toast } from 'react-hot-toast';
+import { v4 as uuidv4 } from 'uuid';
 
 interface CombinedLatexEditorProps {
     user?: any;
 }
 
 const CombinedLatexEditor: React.FC<CombinedLatexEditorProps> = ({ user: userProp }) => {
+    const searchParams = useSearchParams();
+    
+    // Check for URL parameters for initial content
+    const urlContent = searchParams.get('content');
+    const urlFileName = searchParams.get('fileName');
+    const urlLatexFile = searchParams.get('latexFile');
+    
+    // Parse latexFile parameter if present
+    let parsedLatexFile: LatexProject | null = null;
+    if (urlLatexFile) {
+        try {
+            parsedLatexFile = JSON.parse(decodeURIComponent(urlLatexFile));
+        } catch (error) {
+            console.error('Error parsing latexFile parameter:', error);
+        }
+    }
+    
     // Initial content for the editor
-    const initialContent = `\\documentclass{article}
+    const initialContent = parsedLatexFile?.content || urlContent || `\\documentclass{article}
 \\usepackage{amsmath}
 \\usepackage{amssymb}
 \\usepackage{graphicx}
@@ -105,26 +134,27 @@ This is a sample LaTeX document. You can edit it in the editor.
     }, [user]);
 
     // Manual save function
-    const saveDocument = useCallback(() => {
-        // Don't save if we're still loading
-        if (isLoading) {
-            console.log('Manual save skipped due to loading state');
-            return;
-        }
+    const saveDocument = useCallback(async () => {
+        console.log('Manual save triggered');
 
         // Use the latest content from the ref to ensure we have the most recent content
         const latestContent = latestContentRef.current || latexContent;
         
-        console.log('Manual save triggered:', { 
-            user: user ? { id: user.id, role: user.role } : null, 
-            currentProject: currentProject ? { id: currentProject.id, name: currentProject.name } : null, 
-            contentLength: latestContent?.length || 0,
-            contentPreview: latestContent?.substring(0, 100) + '...'
-        });
+        if (!user) {
+            console.log('No user found, cannot save');
+            toast.error('Please log in to save documents');
+            return;
+        }
+
+        if (!latestContent) {
+            console.log('No content to save');
+            toast.error('No content to save');
+            return;
+        }
+
+        setIsSaving(true);
         
-        if (user && latestContent) {
-            setIsSaving(true);
-            
+        try {
             let projectToSave: LatexProject;
             
             if (currentProject) {
@@ -134,7 +164,18 @@ This is a sample LaTeX document. You can edit it in the editor.
                     content: latestContent,
                     lastEdited: new Date().toISOString().split('T')[0]
                 };
-                console.log('Updating existing project:', projectToSave.id, 'with content length:', projectToSave.content?.length);
+                console.log('Updating existing project:', projectToSave.id);
+                    
+                    // Update in database
+                    const success = await updateLatexProjectInAPI(projectToSave);
+                    if (!success) {
+                        console.log('Failed to update via API, saving locally');
+                        // Fallback to simple save
+                        saveLatexProject(projectToSave, user.id, user.role);
+                        toast.success('Document saved locally (API failed)');
+                        setIsSaving(false);
+                        return;
+                    }
             } else {
                 // Create new project if none exists
                 projectToSave = {
@@ -145,88 +186,42 @@ This is a sample LaTeX document. You can edit it in the editor.
                     createdBy: user.id,
                     role: user.role
                 };
-                console.log('Creating new project:', projectToSave.id, 'with content length:', projectToSave.content?.length);
+                console.log('Creating new project:', projectToSave.id);
+                    
+                    // Save to database
+                    const success = await saveLatexProjectToAPI(projectToSave, user.id, user.role);
+                    if (!success) {
+                        console.log('Failed to save via API, saving locally');
+                        // Fallback to simple save
+                        saveLatexProject(projectToSave, user.id, user.role);
+                        toast.success('Document saved locally (API failed)');
+                        setCurrentProject(projectToSave);
+                        setIsSaving(false);
+                        return;
+                    }
+                    
                 setCurrentProject(projectToSave);
             }
             
-            console.log('Saving project with user:', { userId: user.id, userRole: user.role });
-            console.log('Project to save:', { 
-                id: projectToSave.id, 
-                name: projectToSave.name, 
-                contentLength: projectToSave.content?.length,
-                contentPreview: projectToSave.content?.substring(0, 100) + '...'
-            });
-            
+            // Also save to localStorage for backward compatibility
             saveLatexProject(projectToSave, user.id, user.role);
-            
-            // Update the file tree to reflect the saved project changes
-            const updateFileTreeWithProject = () => {
-                const savedTree = getLatexFileTree(user.id, user.role);
-                const updateProjectInTree = (nodes: any[]): any[] => {
-                    return nodes.map(node => {
-                        if (node.id === projectToSave.id && node.type === 'file') {
-                            // Update the project data in the file tree
-                            return { ...node, projectData: projectToSave };
-                        }
-                        if (node.children) {
-                            return { ...node, children: updateProjectInTree(node.children) };
-                        }
-                        return node;
-                    });
-                };
-                
-                const updatedTree = updateProjectInTree(savedTree);
-                saveLatexFileTree(updatedTree, user.id, user.role);
-                console.log('File tree updated with saved project');
-            };
-            
-            updateFileTreeWithProject();
-            
-            // Refresh the file tree to ensure it shows the latest content
-            refreshFileTree();
-            
-            // Test: Immediately read back the saved project to verify it was saved
-            setTimeout(() => {
-                const savedProjects = getSavedLatexProjects(user.id, user.role);
-                const savedProject = savedProjects.find((p: LatexProject) => p.id === projectToSave.id);
-                console.log('Verification - Saved project found:', !!savedProject);
-                if (savedProject) {
-                    console.log('Verification - Saved content length:', savedProject.content?.length);
-                    console.log('Verification - Saved content preview:', savedProject.content?.substring(0, 100) + '...');
-                } else {
-                    console.log('Verification - Project not found in saved projects');
-                }
-            }, 100);
             
             // Show save confirmation
             toast.success('Document saved successfully!', {
                 duration: 2000,
-                position: 'bottom-right',
-                style: {
-                    background: '#10B981',
-                    color: 'white',
-                    fontSize: '12px',
-                    padding: '8px 12px'
-                }
-            });
-            
+                    position: 'top-right',
+                });
+                
+            } catch (error) {
+                console.error('Error saving document:', error);
+                toast.error('Failed to save document');
+            } finally {
             setIsSaving(false);
-            
-            // File tree will automatically reflect the saved changes
-            console.log('Manual save completed successfully');
-        } else {
-            console.log('Manual save failed:', { 
-                hasUser: !!user, 
-                hasContent: !!latestContent,
-                userDetails: user,
-                contentLength: latestContent?.length
-            });
-            toast.error('Failed to save document. Please try again.');
-        }
-    }, [currentProject, user, isLoading, refreshFileTree]);
+            }
+    }, [user, currentProject, latexContent]);
 
     // Auto-save function
-    const autoSaveDocument = useCallback(() => {
+    const autoSaveDocument = useCallback(async () => {
         // Don't auto-save if we're still loading
         if (isLoading) {
             console.log('Auto-save skipped due to loading state');
@@ -262,9 +257,17 @@ This is a sample LaTeX document. You can edit it in the editor.
             }
             
             try {
+                if (currentProject) {
+                    // Update existing project in database
+                    await updateLatexProjectInAPI(projectToSave);
+                } else {
+                    // Save new project to database
+                    await saveLatexProjectToAPI(projectToSave, user.id, user.role);
+                }
+                // Also save to localStorage for backward compatibility
                 saveLatexProject(projectToSave, user.id, user.role);
             } catch (error) {
-                console.error('Error in saveLatexProject:', error);
+                console.error('Error in auto-save:', error);
             }
             
             // Update the file tree to reflect the saved project changes
@@ -348,7 +351,8 @@ This is a sample LaTeX document. You can edit it in the editor.
                 // Set loading to false after a short delay to ensure everything is ready
                 setTimeout(() => {
                     setIsLoading(false);
-                }, 1000);
+                    console.log('Editor initialization complete, loading set to false');
+                }, 500); // Reduced from 1000ms to 500ms
             } catch (error) {
                 console.error('Error initializing editor:', error);
                 setIsLoading(false);
@@ -358,40 +362,78 @@ This is a sample LaTeX document. You can edit it in the editor.
         initializeEditor();
     }, [userProp]);
 
+    // Fallback timeout to ensure loading state is set to false
+    useEffect(() => {
+        const fallbackTimeout = setTimeout(() => {
+            if (isLoading) {
+                console.log('Fallback: Setting loading to false after timeout');
+                setIsLoading(false);
+            }
+        }, 3000); // 3 seconds fallback
+
+        return () => clearTimeout(fallbackTimeout);
+    }, [isLoading]);
+
     // Function to load default project if needed
     const loadDefaultProjectIfNeeded = (userData: any) => {
-        if (!userData) return;
+        // Check if there's a project from URL parameters (BPMN conversion or file selection)
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlFileName = urlParams.get('fileName');
+        const urlContent = urlParams.get('content');
+        const urlLatexFile = urlParams.get('latexFile');
         
-        // Get the file tree to see if there's a main.tex file
-        const savedTree = getLatexFileTree(userData.id, userData.role);
-        const mainTexFile = savedTree.find(node => 
-            node.type === 'file' && node.name === 'main.tex'
-        );
-        
-        if (mainTexFile && mainTexFile.projectData) {
-            console.log('Found main.tex file, loading it into editor');
-            setCurrentProject(mainTexFile.projectData);
-            if (mainTexFile.projectData.content) {
-                setLatexContent(mainTexFile.projectData.content);
+        // Handle file selection from LaTeX files list
+        if (urlLatexFile) {
+            try {
+                const parsedLatexFile = JSON.parse(decodeURIComponent(urlLatexFile));
+                setCurrentProject(parsedLatexFile);
+                setLatexContent(parsedLatexFile.content);
+                console.log('Loaded LaTeX project from file selection:', parsedLatexFile.name);
+                return;
+            } catch (error) {
+                console.error('Error parsing latexFile parameter:', error);
             }
-        } else {
-            console.log('No main.tex file found, will be created by file tree');
         }
+        
+        // Handle BPMN conversion
+        if (urlFileName && urlContent) {
+            const newProject: LatexProject = {
+                id: uuidv4(),
+                name: urlFileName,
+                lastEdited: new Date().toISOString().split('T')[0],
+                createdBy: userData.id,
+                role: userData.role,
+                content: urlContent
+            };
+            setCurrentProject(newProject);
+            setLatexContent(urlContent);
+            console.log('Created new LaTeX project from BPMN:', urlFileName);
+            return;
+        }
+        
+        // No default project to load
+        console.log('No default project to load');
     };
 
     // Add keyboard shortcut for Ctrl+S
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
+            console.log('Key pressed:', event.key, 'Ctrl:', event.ctrlKey, 'Meta:', event.metaKey);
             if ((event.ctrlKey || event.metaKey) && event.key === 's') {
                 event.preventDefault();
+                event.stopPropagation();
                 console.log('Ctrl+S pressed - saving document');
                 saveDocument();
             }
         };
 
-        document.addEventListener('keydown', handleKeyDown);
+        // Add event listener to both document and window to ensure it's captured
+        document.addEventListener('keydown', handleKeyDown, true);
+        window.addEventListener('keydown', handleKeyDown, true);
+        
         return () => {
-            document.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('keydown', handleKeyDown, true);
+            window.removeEventListener('keydown', handleKeyDown, true);
         };
     }, [saveDocument]);
 
@@ -414,8 +456,8 @@ This is a sample LaTeX document. You can edit it in the editor.
             clearTimeout(autoSaveTimeoutRef.current);
         }
         
-        autoSaveTimeoutRef.current = setTimeout(() => {
-            autoSaveDocument();
+        autoSaveTimeoutRef.current = setTimeout(async () => {
+            await autoSaveDocument();
         }, 2500);
     };
 
@@ -428,8 +470,8 @@ This is a sample LaTeX document. You can edit it in the editor.
             clearTimeout(autoSaveTimeoutRef.current);
         }
         
-        autoSaveTimeoutRef.current = setTimeout(() => {
-            autoSaveDocument();
+        autoSaveTimeoutRef.current = setTimeout(async () => {
+            await autoSaveDocument();
         }, 2500);
     };
 
@@ -599,17 +641,9 @@ This is a sample LaTeX document. You can edit it in the editor.
         console.log('File tree refresh triggered');
     }, []);
 
-    // Handle default file creation
-    const handleDefaultFileCreated = useCallback((project: LatexProject) => {
-        console.log('Default main.tex file created, selecting it:', project.name);
-        setCurrentProject(project);
-        if (project.content) {
-            setLatexContent(project.content);
-        }
-    }, []);
-
     // Manual save function (for save button)
     const handleManualSave = () => {
+        console.log('handleManualSave called');
         saveDocument();
     };
 
@@ -623,8 +657,6 @@ This is a sample LaTeX document. You can edit it in the editor.
                 onFileUpload={handleFileUpload}
                 currentProjectId={currentProject?.id || null}
                 onRefresh={handleRefresh}
-                onDefaultFileCreated={handleDefaultFileCreated}
-
             />
 
             {/* Editor Container */}

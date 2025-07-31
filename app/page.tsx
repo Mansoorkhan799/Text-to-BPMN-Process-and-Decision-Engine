@@ -204,13 +204,15 @@ export default function Home() {
         )}
 
         {currentView === 'dashboard' && (
-          <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="h-full">
-                <BpmnDashboard />
-              </div>
-              <div className="h-full">
-                <LatexDashboard />
+          <main className="flex-1 overflow-y-auto">
+            <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div>
+                  <BpmnDashboard user={user} />
+                </div>
+                <div>
+                  <LatexDashboard user={user} />
+                </div>
               </div>
             </div>
           </main>
@@ -218,7 +220,7 @@ export default function Home() {
 
         {currentView === 'bpmn' && (
           <main className="flex-1 w-full h-full overflow-hidden">
-            <BpmnEditor />
+            <BpmnEditor user={user} />
           </main>
         )}
 

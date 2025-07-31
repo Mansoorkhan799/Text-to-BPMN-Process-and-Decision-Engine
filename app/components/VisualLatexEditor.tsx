@@ -1650,7 +1650,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             return;
         }
         if (style === 'table') {
-            insertTable();
+            insertTable(3, 3); // Default 3x3 table
             setShowTextStyleDropdown(false);
             return;
         }
@@ -1984,13 +1984,12 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
 
     // Function to insert process management table template
     const insertProcessTable = () => {
-        const tableName = window.prompt('Enter table name (optional):', 'Process Management Table');
+        const tableName = window.prompt('Enter table name (optional):', 'Process Details Table');
         
-        // Create header row with process management columns
+        // Create header row with process details columns
         const headerRow: TableRowElement = {
             type: 'table-row',
             children: [
-                { type: 'table-cell', children: [{ text: 'Process ID', bold: true }] },
                 { type: 'table-cell', children: [{ text: 'Process Name', bold: true }] },
                 { type: 'table-cell', children: [{ text: 'Description', bold: true }] },
                 { type: 'table-cell', children: [{ text: 'Process Owner', bold: true }] },
@@ -1998,30 +1997,24 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             ],
         };
 
-        // Create 5 data rows with sample process IDs
-        const dataRows: TableRowElement[] = [];
-        for (let i = 1; i <= 5; i++) {
-            const processId = `P${String(i).padStart(3, '0')}`;
-            const dataRow: TableRowElement = {
-                type: 'table-row',
-                children: [
-                    { type: 'table-cell', children: [{ text: processId }] },
-                    { type: 'table-cell', children: [{ text: '' }] },
-                    { type: 'table-cell', children: [{ text: '' }] },
-                    { type: 'table-cell', children: [{ text: '' }] },
-                    { type: 'table-cell', children: [{ text: '' }] },
-                ],
-            };
-            dataRows.push(dataRow);
-        }
+        // Create 1 data row with empty cells
+        const dataRow: TableRowElement = {
+            type: 'table-row',
+            children: [
+                { type: 'table-cell', children: [{ text: '' }] },
+                { type: 'table-cell', children: [{ text: '' }] },
+                { type: 'table-cell', children: [{ text: '' }] },
+                { type: 'table-cell', children: [{ text: '' }] },
+            ],
+        };
 
-        // Combine header and data rows
-        const allRows = [headerRow, ...dataRows];
+        // Combine header and data row
+        const allRows = [headerRow, dataRow];
 
         Transforms.insertNodes(editor, {
             type: 'table',
-            rows: 6, // 1 header + 5 data rows
-            cols: 5,
+            rows: 2, // 1 header + 1 data row
+            cols: 4,
             children: allRows,
         } as TableElement);
     };
@@ -2188,7 +2181,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             return;
         }
         if (style === 'table') {
-            insertTable();
+            insertTable(3, 3); // Default 3x3 table
             return;
         }
         switch (style) {

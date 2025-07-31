@@ -140,4 +140,124 @@ export function getLatexProjectById(projectId: string, userId?: string, role?: s
         console.error('Error retrieving LaTeX project:', err);
         return null;
     }
+}
+
+/**
+ * Async: Gets a LaTeX project by ID from the database
+ */
+export async function getLatexProjectByIdFromAPI(projectId: string): Promise<LatexProject | null> {
+    try {
+        const res = await fetch(`/api/latex?fileId=${projectId}`);
+        if (!res.ok) {
+            console.error('Failed to fetch LaTeX project from database');
+            return null;
+        }
+        const data = await res.json();
+        return {
+            id: data.fileId || data._id,
+            name: data.name,
+            lastEdited: data.updatedAt || new Date().toISOString(),
+            content: data.content,
+            createdBy: data.userId,
+            role: data.role,
+        };
+    } catch (err) {
+        console.error('Error fetching LaTeX project from database:', err);
+        return null;
+    }
+}
+
+/**
+ * Async: Saves a LaTeX project to the database
+ */
+export async function saveLatexProjectToAPI(project: LatexProject, userId?: string, role?: string): Promise<boolean> {
+    try {
+        console.log('Saving project to API:', project.id);
+
+        const requestBody = {
+            userId: userId || project.createdBy,
+            name: project.name,
+            type: 'tex',
+            content: project.content || '',
+            fileId: project.id,
+            documentMetadata: {
+                title: project.name,
+                author: '',
+                description: '',
+                tags: [],
+            }
+        };
+
+        const res = await fetch('/api/latex', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('API save failed:', errorText);
+            return false;
+        }
+
+        console.log('Project saved to API successfully');
+        return true;
+    } catch (err) {
+        console.error('Error saving LaTeX project to database:', err);
+        return false;
+    }
+}
+
+/**
+ * Async: Updates a LaTeX project in the database
+ */
+export async function updateLatexProjectInAPI(project: LatexProject): Promise<boolean> {
+    try {
+        console.log('Updating project in API:', project.id);
+
+        const requestBody = {
+            fileId: project.id,
+            content: project.content,
+            name: project.name,
+            documentMetadata: {
+                title: project.name,
+                author: '',
+                description: '',
+                tags: [],
+            }
+        };
+
+        const res = await fetch('/api/latex', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody)
+        });
+
+        if (!res.ok) {
+            const errorText = await res.text();
+            console.error('API update failed:', errorText);
+            return false;
+        }
+
+        console.log('Project updated in API successfully');
+        return true;
+    } catch (err) {
+        console.error('Error updating LaTeX project in database:', err);
+        return false;
+    }
+}
+
+/**
+ * Async: Deletes a LaTeX project from the database
+ */
+export async function deleteLatexProjectFromAPI(projectId: string): Promise<boolean> {
+    try {
+        const res = await fetch(`/api/latex?fileId=${projectId}`, {
+            method: 'DELETE'
+        });
+        return res.ok;
+    } catch (err) {
+        console.error('Error deleting LaTeX project from database:', err);
+        return false;
+    }
 } 

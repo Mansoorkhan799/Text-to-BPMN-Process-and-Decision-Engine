@@ -59,6 +59,44 @@ export function getBpmnFileTree(userId?: string, role?: string): FileTreeNode[] 
 }
 
 /**
+ * Async: Gets the BPMN file tree structure from the backend API
+ */
+export async function getBpmnFileTreeFromAPI(userId?: string, role?: string): Promise<FileTreeNode[]> {
+  if (!userId || !role) return [];
+  try {
+    const res = await fetch(`/api/bpmn-filetree?userId=${userId}&userRole=${role}`);
+    if (!res.ok) {
+      console.error('Failed to fetch file tree from MongoDB Atlas');
+      return [];
+    }
+    const data = await res.json();
+    console.log('Retrieved file tree from MongoDB Atlas:', data?.treeData?.length || 0, 'items');
+    return data?.treeData || [];
+  } catch (err) {
+    console.error('Error fetching BPMN file tree from MongoDB Atlas:', err);
+    return [];
+  }
+}
+
+/**
+ * Async: Saves the BPMN file tree structure to the backend API
+ */
+export async function saveBpmnFileTreeToAPI(fileTree: FileTreeNode[], userId?: string, role?: string): Promise<boolean> {
+  if (!userId || !role) return false;
+  try {
+    const res = await fetch('/api/bpmn-filetree', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, userRole: role, treeData: fileTree })
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('Error saving BPMN file tree to API:', err);
+    return false;
+  }
+}
+
+/**
  * Saves the complete LaTeX file tree structure to localStorage
  */
 export function saveLatexFileTree(fileTree: FileTreeNode[], userId?: string, role?: string): void {
@@ -85,6 +123,64 @@ export function getLatexFileTree(userId?: string, role?: string): FileTreeNode[]
     return JSON.parse(savedData);
   } catch (err) {
     console.error('Error retrieving LaTeX file tree:', err);
+    return [];
+  }
+}
+
+/**
+ * Async: Gets the LaTeX file tree structure from the backend API
+ */
+export async function getLatexFileTreeFromAPI(userId?: string, role?: string): Promise<FileTreeNode[]> {
+  if (!userId || !role) return [];
+  try {
+    const res = await fetch(`/api/latex-filetree?userId=${userId}&userRole=${role}`);
+    if (!res.ok) {
+      console.error('Failed to fetch LaTeX file tree from MongoDB Atlas');
+      return [];
+    }
+    const data = await res.json();
+    console.log('Retrieved LaTeX file tree from MongoDB Atlas:', data?.treeData?.length || 0, 'items');
+    return data?.treeData || [];
+  } catch (err) {
+    console.error('Error fetching LaTeX file tree from MongoDB Atlas:', err);
+    return [];
+  }
+}
+
+/**
+ * Async: Saves the LaTeX file tree structure to the backend API
+ */
+export async function saveLatexFileTreeToAPI(fileTree: FileTreeNode[], userId?: string, role?: string): Promise<boolean> {
+  if (!userId || !role) return false;
+  try {
+    const res = await fetch('/api/latex-filetree', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, userRole: role, treeData: fileTree })
+    });
+    return res.ok;
+  } catch (err) {
+    console.error('Error saving LaTeX file tree to API:', err);
+    return false;
+  }
+}
+
+/**
+ * Async: Gets the LaTeX tree structure from the nodes API (hierarchical)
+ */
+export async function getLatexTreeFromAPI(userId?: string): Promise<FileTreeNode[]> {
+  if (!userId) return [];
+  try {
+    const res = await fetch(`/api/latex-nodes?userId=${userId}`);
+    if (!res.ok) {
+      console.error('Failed to fetch LaTeX tree from MongoDB Atlas');
+      return [];
+    }
+    const data = await res.json();
+    console.log('Retrieved LaTeX tree from MongoDB Atlas:', data?.tree?.length || 0, 'items');
+    return data?.tree || [];
+  } catch (err) {
+    console.error('Error fetching LaTeX tree from MongoDB Atlas:', err);
     return [];
   }
 }

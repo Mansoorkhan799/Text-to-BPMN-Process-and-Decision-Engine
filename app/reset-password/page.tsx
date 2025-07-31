@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
@@ -9,7 +9,7 @@ import { Input } from '@/app/components/ui/Input';
 import { Button } from '@/app/components/ui/Button';
 import { PasswordInput } from '@/app/components/ui/PasswordInput';
 
-export default function ResetPassword() {
+function ResetPasswordForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -173,5 +173,23 @@ export default function ResetPassword() {
         )}
       </Card>
     </div>
+  );
+}
+
+export default function ResetPassword() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <Card title="Loading...">
+          <div className="space-y-6">
+            <p className="text-center text-gray-600">
+              Loading reset password form...
+            </p>
+          </div>
+        </Card>
+      </div>
+    }>
+      <ResetPasswordForm />
+    </Suspense>
   );
 } 

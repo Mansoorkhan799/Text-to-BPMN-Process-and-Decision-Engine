@@ -1,12 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import BpmnViewerComponent from './BpmnViewer';
 import BpmnModeler from 'bpmn-js/lib/Modeler';
 import BpmnColorPickerModule from 'bpmn-js-color-picker';
-import { saveProject, getProjectById, canAccessProject, BpmnProject } from '../utils/projectStorage';
-import { addProjectVersion } from '../utils/projectVersions';
+import { BpmnProject, saveProjectToAPI, getProjectByIdFromAPI } from '../utils/projectStorage';
+import { 
+  updateBpmnNode, 
+  createBpmnNode, 
+  getBpmnNodeById,
+  convertProjectToNode,
+  CreateNodeRequest
+} from '../utils/bpmnNodeStorage';
+
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from 'react-hot-toast';
 import { XMLParser } from 'fast-xml-parser';
@@ -18,8 +25,8 @@ const DuplicateWarningModal = dynamic(() => import('./DuplicateWarningModal'), {
 // Add the BpmnFileTree import
 const BpmnFileTree = dynamic(() => import('./BpmnFileTree'), { ssr: false });
 import { convertBpmnToLatex } from '../utils/bpmnToLatex';
-import { saveLatexProject } from '../utils/latexProjectStorage';
-import { getLatexFileTree, saveLatexFileTree, FileTreeNode } from '../utils/fileTreeStorage';
+import { saveLatexProject, saveLatexProjectToAPI, LatexProject } from '../utils/latexProjectStorage';
+import { getLatexFileTree, saveLatexFileTree, saveLatexFileTreeToAPI, FileTreeNode } from '../utils/fileTreeStorage';
 
 // Add custom CSS for grid background
 const gridStyles = `
@@ -130,9 +137,16 @@ interface User {
     role?: string;
 }
 
-const BpmnEditor = () => {
+interface BpmnEditorProps {
+    user?: User | null;
+    onCreateFileFromEditor?: (project: BpmnProject) => void;
+}
+
+const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFromEditor }) => {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const containerRef = useRef<HTMLDivElement>(null);
+    const loadingRef = useRef(false);
     const [modeler, setModeler] = useState<any>(null);
     const [projectName, setProjectName] = useState('Untitled Diagram');
     const [projectId, setProjectId] = useState<string | null>(null);
@@ -143,7 +157,7 @@ const BpmnEditor = () => {
     const [showImportDropdown, setShowImportDropdown] = useState(false);
     const [showViewer, setShowViewer] = useState(false);
     const [currentDiagramXML, setCurrentDiagramXML] = useState<string>('');
-    const [user, setUser] = useState<User | null>(null);
+    const [user, setUser] = useState<User | null>(propUser || null);
     const [exampleDropdownOpen, setExampleDropdownOpen] = useState(false);
     const [downloadingExample, setDownloadingExample] = useState<string | null>(null);
     const [downloading, setDownloading] = useState(false);
@@ -168,15 +182,30 @@ const BpmnEditor = () => {
     const [tablePaneCollapsed, setTablePaneCollapsed] = useState(false);
     const [tableFormData, setTableFormData] = useState({
         processName: '',
-        task: '',
-        procedure: '',
-        toolsReferences: '',
-        role: ''
+        description: '',
+        processOwner: '',
+        processManager: ''
     });
+    const [isEditingProcessDetails, setIsEditingProcessDetails] = useState(false);
     const [generatingLatex, setGeneratingLatex] = useState(false);
+    const [modelerReady, setModelerReady] = useState(false);
+    const [isLoadingFromSession, setIsLoadingFromSession] = useState(false);
 
-    // Fetch current user on component mount
+    // Add state for process metadata
+    const [processMetadata, setProcessMetadata] = useState({
+        processName: '',
+        description: '',
+        processOwner: '',
+        processManager: '',
+    });
+
+    // Fetch current user on component mount if not provided as prop
     useEffect(() => {
+        if (propUser) {
+            setUser(propUser);
+            return;
+        }
+
         const fetchCurrentUser = async () => {
             try {
                 const response = await fetch('/api/auth/check', {
@@ -195,78 +224,237 @@ const BpmnEditor = () => {
         };
 
         fetchCurrentUser();
-    }, []);
+    }, [propUser]);
 
-    // Modify the useEffect that checks for saved project to improve loading
+    // Handle bpmnFile URL parameter for file selection from list
     useEffect(() => {
-        if (typeof window !== 'undefined' && modeler && user) {
+        const handleBpmnFileFromUrl = async () => {
+            if (!user || !modeler || !modelerReady) return;
+
+            const urlBpmnFile = searchParams.get('bpmnFile');
+            if (urlBpmnFile) {
+                try {
+                    const parsedBpmnFile = JSON.parse(decodeURIComponent(urlBpmnFile));
+                    
+                    // Set project details
+                    setProjectId(parsedBpmnFile.id);
+                    setProjectName(parsedBpmnFile.name);
+                    setProcessMetadata(parsedBpmnFile.processMetadata || {
+                        processName: '',
+                        description: '',
+                        processOwner: '',
+                        processManager: '',
+                    });
+                    setTableFormData(parsedBpmnFile.processMetadata || {
+                        processName: '',
+                        description: '',
+                        processOwner: '',
+                        processManager: '',
+                    });
+
+                    // Load the BPMN content into the editor
+                    if (parsedBpmnFile.content) {
+                        try {
+                            // Ensure the container is visible and properly sized
+                            if (containerRef.current) {
+                                containerRef.current.style.display = 'block';
+                                containerRef.current.style.width = '100%';
+                                containerRef.current.style.height = '100%';
+                            }
+
+                            // Clear any existing content first
+                            await modeler.importXML(parsedBpmnFile.content);
+                            
+                            // Force a re-render of the canvas
+                            setTimeout(() => {
+                                try {
+                                    if (modeler && modeler.get('canvas')) {
+                                        const canvas = modeler.get('canvas');
+                                        canvas.zoom('fit-viewport');
+                                        
+                                        // Force a redraw
+                                        canvas.viewbox(canvas.viewbox());
+                                    }
+                                } catch (zoomError) {
+                                    console.error('Error zooming to fit viewport:', zoomError);
+                                }
+                            }, 300);
+                            
+                            toast.success(`BPMN diagram "${parsedBpmnFile.name}" loaded successfully!`);
+                            
+                            // Clear the URL parameter after successful load
+                            const url = new URL(window.location.href);
+                            url.searchParams.delete('bpmnFile');
+                            window.history.replaceState({}, '', url.toString());
+                            
+                        } catch (importError) {
+                            console.error('Error importing BPMN content:', importError);
+                            toast.error('Failed to load BPMN diagram content');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error parsing bpmnFile parameter:', error);
+                    toast.error('Failed to parse BPMN file data');
+                }
+            }
+        };
+
+        handleBpmnFileFromUrl();
+    }, [user, modeler, modelerReady, searchParams]);
+
+    // Function to load project from session storage
+    const loadProjectFromSession = async () => {
+        if (typeof window !== 'undefined' && modeler && user && modelerReady && !loadingRef.current) {
             const savedProjectId = sessionStorage.getItem('currentProject');
             if (savedProjectId) {
+                loadingRef.current = true;
+                setIsLoadingFromSession(true);
                 setProjectId(savedProjectId);
                 setLoadingProject(true);
 
-                // Get user info from session if available (for projects opened from dashboard)
-                const projectUserId = sessionStorage.getItem('projectUserId') || user.id;
-                const projectUserRole = sessionStorage.getItem('projectUserRole') || user.role;
+                try {
+                    // Import the project from the new API
+                    const { getBpmnNodeById, convertNodeToProject } = await import('../utils/bpmnNodeStorage');
+                    const node = await getBpmnNodeById(savedProjectId, user.id);
+                    
+                    if (node) {
+                        const project = convertNodeToProject(node);
+                        
+                        // Set project details
+                        setProjectName(project.name);
+                        setProcessMetadata(project.processMetadata || {
+                            processName: '',
+                            description: '',
+                            processOwner: '',
+                            processManager: '',
+                        });
+                        setTableFormData(project.processMetadata || {
+                            processName: '',
+                            description: '',
+                            processOwner: '',
+                            processManager: '',
+                        });
 
-                // Use our storage utility to get the project data
-                const project = getProjectById(savedProjectId, projectUserId, projectUserRole);
-                if (project) {
-                    // Check if the current user can access this project
-                    if (!canAccessProject(project, user.id, user.role)) {
-                        toast.error("You don't have permission to access this project");
-                        setLoadingProject(false);
+                        // Load the BPMN content into the editor
+                        if (project.content) {
+                            try {
+                                // Ensure the container is visible and properly sized
+                                if (containerRef.current) {
+                                    containerRef.current.style.display = 'block';
+                                    containerRef.current.style.width = '100%';
+                                    containerRef.current.style.height = '100%';
+                                }
 
-                        // Redirect back to dashboard
-                        if (typeof window !== 'undefined') {
-                            sessionStorage.setItem('currentView', 'dashboard');
-                            window.location.reload();
-                        }
-                        return;
-                    }
-
-                    // Important: Set the project name immediately from the saved project
-                    setProjectName(project.name || 'Untitled Diagram');
-                    console.log("Loading project with name:", project.name);
-
-                    // If we have XML for the project, load it
-                    if (project.xml) {
-                        try {
-                            modeler.importXML(project.xml)
-                                .then(() => {
-                                    toast.success(`Project "${project.name}" loaded successfully!`);
-                                    // Fit the diagram to the viewport after loading
-                                    setTimeout(() => {
-                                        modeler.get('canvas').zoom('fit-viewport');
-                                    }, 100);
-                                })
-                                .catch((err: any) => {
-                                    console.error('Error loading saved project:', err);
-                                    toast.error('Failed to load project diagram');
-                                })
-                                .finally(() => {
-                                    setLoadingProject(false);
-                                });
-                        } catch (err) {
-                            console.error('Error loading saved project:', err);
-                            toast.error('Failed to load project diagram');
-                            setLoadingProject(false);
-                        }
-                    } else {
-                        setLoadingProject(false);
+                                // Clear any existing content first
+                                await modeler.importXML(project.content);
+                                
+                                // Force a re-render of the canvas
+                                setTimeout(() => {
+                                    try {
+                                        if (modeler && modeler.get('canvas')) {
+                                            const canvas = modeler.get('canvas');
+                                            canvas.zoom('fit-viewport');
+                                            
+                                            // Force a redraw
+                                            canvas.viewbox(canvas.viewbox());
+                                        }
+                                    } catch (zoomError) {
+                                        console.error('Error zooming to fit viewport:', zoomError);
+                                    }
+                                }, 300);
+                                
+                                toast.success(`Project "${project.name}" loaded successfully!`);
+                                
+                                // Clear session storage only after successful load
+                                setTimeout(() => {
+                                    sessionStorage.removeItem('currentProject');
+                                    sessionStorage.removeItem('projectUserId');
+                                    sessionStorage.removeItem('projectUserRole');
+                                }, 1000);
+                                
+                                // Fallback: if canvas is still not visible after 3 seconds, try to recreate modeler
+                                setTimeout(() => {
+                                    if (containerRef.current && containerRef.current.children.length === 0) {
+                                        console.log('Canvas not visible, attempting to recreate modeler...');
+                                        
+                                        // Clear the container
+                                        if (containerRef.current) {
+                                            containerRef.current.innerHTML = '';
+                                        }
+                                        
+                                        // Force a re-render by updating state
+                                        setModelerReady(false);
+                                        setModeler(null);
+                                        
+                                        // Recreate the modeler after a short delay
+                                        setTimeout(() => {
+                                            if (containerRef.current && !loadingRef.current) {
+                                                const newModeler = new BpmnModeler({
+                                                    container: containerRef.current,
+                                                    keyboard: { bindTo: window },
+                                                    additionalModules: [BpmnColorPickerModule]
+                                                });
+                                                
+                                                setModeler(newModeler);
+                                                
+                                                                                                // Import the project content again
+                                                if (project.content) {
+                                                    newModeler.importXML(project.content)
+                                                        .then(() => {
+                                                            setModelerReady(true);
+                                                            (newModeler.get('canvas') as any).zoom('fit-viewport');
+                                                        })
+                                                        .catch((err: any) => {
+                                                            console.error('Error recreating modeler:', err);
+                                                            setModelerReady(true);
+                                                        });
+                                                } else {
+                                                    setModelerReady(true);
+                                                }
+                                            }
+                                        }, 500);
+                                    }
+                                }, 3000);
+                                
+                            } catch (error) {
+                                console.error('Error importing project XML:', error);
+                                toast.error('Failed to load diagram content');
+                            }
                     }
                 } else {
                     toast.error('Project not found');
-                    setLoadingProject(false);
                 }
-
-                // Clear the project ID from session storage to avoid reloading it every time
-                sessionStorage.removeItem('currentProject');
-                sessionStorage.removeItem('projectUserId');
-                sessionStorage.removeItem('projectUserRole');
+                } catch (error) {
+                    console.error('Error loading project:', error);
+                    toast.error('Failed to load project');
+                } finally {
+                    setLoadingProject(false);
+                    setIsLoadingFromSession(false);
+                    loadingRef.current = false;
+                }
             }
         }
-    }, [modeler, user]);
+    };
+
+    // Effect to handle project loading when modeler becomes ready
+    useEffect(() => {
+        if (modelerReady && modeler && user) {
+            const savedProjectId = sessionStorage.getItem('currentProject');
+            if (savedProjectId && !projectId) {
+                // Add a longer delay to ensure the modeler is fully initialized and stable
+                setTimeout(() => {
+                    if (modeler && modelerReady && containerRef.current) {
+                        // Ensure the container is properly set up
+                        containerRef.current.style.display = 'block';
+                        containerRef.current.style.width = '100%';
+                        containerRef.current.style.height = '100%';
+                        
+                        loadProjectFromSession();
+                    }
+                }, 200);
+            }
+        }
+    }, [modelerReady, modeler, user, projectId]);
 
     // Apply custom grid styles
     useEffect(() => {
@@ -302,6 +490,11 @@ const BpmnEditor = () => {
     useEffect(() => {
         if (!containerRef.current || !stylesLoaded) return;
 
+        // Don't recreate modeler if we're loading from session
+        if (loadingRef.current) {
+            return;
+        }
+
         // Create a new modeler instance
         const bpmnModeler = new BpmnModeler({
             container: containerRef.current,
@@ -317,13 +510,22 @@ const BpmnEditor = () => {
         setModeler(bpmnModeler);
 
         // Import the initial diagram
-        bpmnModeler.importXML(INITIAL_DIAGRAM).catch((err: any) => {
-            console.error('Error importing BPMN diagram', err);
-        });
+        bpmnModeler.importXML(INITIAL_DIAGRAM)
+            .then(() => {
+                // Mark modeler as ready after initial diagram is loaded
+                setModelerReady(true);
+            })
+            .catch((err: any) => {
+                console.error('Error importing BPMN diagram', err);
+                setModelerReady(true); // Still mark as ready even if initial diagram fails
+            });
 
         // Clean up function
         return () => {
-            bpmnModeler.destroy();
+            // Only destroy if we're not loading from session
+            if (!loadingRef.current) {
+                bpmnModeler.destroy();
+            }
         };
     }, [stylesLoaded]);
 
@@ -332,9 +534,29 @@ const BpmnEditor = () => {
         setFileTreeRefreshTrigger(prev => prev + 1);
     };
 
+    // Function to handle creating a file from the editor (for untitled diagrams)
+    const handleCreateFileFromEditor = useCallback(async (project: BpmnProject) => {
+        try {
+            // Save the project to storage
+            await saveProjectToAPI(project, user?.id, user?.role);
+            
+            // Update the current project ID and name
+            setProjectId(project.id);
+            setProjectName(project.name);
+            
+            // Refresh the file tree to show the new file
+            refreshFileTree();
+            
+            toast.success(`File "${project.name}" created successfully!`);
+        } catch (error) {
+            console.error('Error creating file from editor:', error);
+            toast.error('Failed to create file');
+        }
+    }, [user, refreshFileTree]);
+
     // Function to save the current diagram as a project with improved functionality
-    const handleSaveProject = async () => {
-        if (!modeler) return;
+    const handleSaveProject = useCallback(async () => {
+        if (!modeler || !user) return;
 
         try {
             setIsSaving(true);
@@ -342,50 +564,78 @@ const BpmnEditor = () => {
             // Get the current XML
             const { xml } = await modeler.saveXML({ format: true });
 
-            // Generate a preview of the diagram as SVG
-            const { svg } = await modeler.saveSVG();
+            // Get current process metadata from the form
+            const currentMetadata = {
+                processName: tableFormData.processName,
+                description: tableFormData.description,
+                processOwner: tableFormData.processOwner,
+                processManager: tableFormData.processManager,
+            };
 
-            // Generate a new ID if this is a new project
-            const id = projectId || Math.floor(Math.random() * 10000000).toString();
+            console.log('Saving project with metadata:', currentMetadata);
+            console.log('Current project ID:', projectId);
 
-            // Make sure to use the current projectName (which might be from the header)
-            // Save the project using our storage utility with all necessary data
-            saveProject({
-                id,
-                name: projectName,
-                lastEdited: new Date().toISOString().split('T')[0],
-                xml,
-                preview: svg
-            }, user?.id, user?.role);
+            // Check if this is an untitled diagram (no projectId or default name)
+            const isUntitledDiagram = !projectId || projectName === 'Untitled Diagram';
 
-            // Update the project ID state
-            setProjectId(id);
+            if (isUntitledDiagram) {
+                // Create a new file for untitled diagrams
+                const newProjectName = projectName === 'Untitled Diagram' ? 'Untitled' : projectName;
+                
+                const request: CreateNodeRequest = {
+                    userId: user.id,
+                    type: 'file',
+                    name: newProjectName,
+                    content: xml,
+                    processMetadata: currentMetadata,
+                };
 
-            // Save version history
-            if (id) {
-                addProjectVersion(
-                    id,
-                    xml,
-                    user?.id,
-                    user?.role,
-                    `Saved by ${user?.name || user?.email || 'user'}`
-                );
+                console.log('Creating new file:', request);
+
+                // Create the file using the new API
+                const newNode = await createBpmnNode(request);
+
+                // Update the current project state
+                setProjectId(newNode.id);
+                setProjectName(newProjectName);
+                setProcessMetadata(currentMetadata);
+
+                // Create the file in the file tree
+                if (onCreateFileFromEditor) {
+                    const newProject: BpmnProject = {
+                        id: newNode.id,
+                        name: newNode.name,
+                        content: newNode.content || '',
+                        processMetadata: newNode.processMetadata || currentMetadata,
+                    };
+                    await onCreateFileFromEditor(newProject);
             }
 
-            toast.success(`Project "${projectName}" saved successfully!`);
+                toast.success(`File "${newProjectName}" created and saved successfully!`);
+            } else {
+                // Update existing file
+                console.log('Updating existing file with ID:', projectId);
+                
+                await updateBpmnNode({
+                    nodeId: projectId!,
+                    userId: user.id,
+                    name: projectName,
+                    content: xml,
+                    processMetadata: currentMetadata,
+                });
 
-            // Refresh the file tree to show updated data
-            refreshFileTree();
+                // Update local metadata state
+                setProcessMetadata(currentMetadata);
 
-            setTimeout(() => {
-                setIsSaving(false);
-            }, 500);
-        } catch (err) {
-            console.error('Error saving project:', err);
+                toast.success(`File "${projectName}" updated successfully!`);
+            }
+        } catch (error) {
+            console.error('Error saving project:', error);
             toast.error('Failed to save project');
+        } finally {
             setIsSaving(false);
         }
-    };
+    }, [modeler, projectName, projectId, user, tableFormData, onCreateFileFromEditor]);
 
     // Function to handle going back to dashboard
     const handleBackToDashboard = () => {
@@ -400,6 +650,64 @@ const BpmnEditor = () => {
 
             window.location.reload();
         }
+    };
+
+    // Function to toggle edit mode for process details
+    const handleToggleProcessDetailsEdit = () => {
+        setIsEditingProcessDetails(!isEditingProcessDetails);
+    };
+
+    // Function to save process details
+    const handleSaveProcessDetails = async () => {
+        if (!user || !projectId) {
+            toast.error('No project selected');
+            return;
+        }
+
+        const updatedMetadata = {
+            processName: tableFormData.processName,
+            description: tableFormData.description,
+            processOwner: tableFormData.processOwner,
+            processManager: tableFormData.processManager,
+        };
+        
+        setProcessMetadata(updatedMetadata);
+        setIsEditingProcessDetails(false);
+        
+        // If we have a current project, save it immediately with the updated metadata
+        if (modeler) {
+            try {
+                setIsSaving(true);
+                
+                // Get the current XML
+                const { xml } = await modeler.saveXML({ format: true });
+                
+                // Update the file with new metadata
+                await updateBpmnNode({
+                    nodeId: projectId,
+                    userId: user.id,
+                    name: projectName,
+                    content: xml,
+                    processMetadata: updatedMetadata,
+                });
+                
+                toast.success('Process details saved successfully!');
+            } catch (err) {
+                console.error('Error saving process details:', err);
+                toast.error('Failed to save process details');
+            } finally {
+                setIsSaving(false);
+            }
+        } else {
+            toast.success('Process details saved successfully!');
+        }
+    };
+
+    // Function to clear process details
+    const handleClearProcessDetails = () => {
+        setTableFormData(processMetadata);
+        setIsEditingProcessDetails(false);
+        toast.success('Process details reset to original values');
     };
 
     // Function to save the diagram as SVG
@@ -511,22 +819,36 @@ const BpmnEditor = () => {
         }
     };
 
-    // Function to create a new diagram
-    const handleNew = () => {
-        if (!modeler) return;
 
-        modeler.importXML(INITIAL_DIAGRAM).catch((err: any) => {
-            console.error('Error importing BPMN diagram', err);
-        });
-    };
 
     // Function to handle project selection from file tree
-    const handleProjectSelect = (project: BpmnProject) => {
+    const handleProjectSelect = async (project: BpmnProject) => {
+        console.log('Loading project:', project);
+        console.log('Project metadata:', project.processMetadata);
+        
         setProjectId(project.id);
         setProjectName(project.name);
         
-        if (project.xml && modeler) {
-            modeler.importXML(project.xml)
+        // Load process metadata if available
+        if (project.processMetadata) {
+            console.log('Setting process metadata:', project.processMetadata);
+            setProcessMetadata(project.processMetadata);
+            setTableFormData(project.processMetadata);
+        } else {
+            console.log('No process metadata found, resetting to empty');
+            // Reset to empty if no metadata
+            const emptyMetadata = {
+                processName: '',
+                description: '',
+                processOwner: '',
+                processManager: '',
+            };
+            setProcessMetadata(emptyMetadata);
+            setTableFormData(emptyMetadata);
+        }
+        
+        if (project.content && modeler) {
+            modeler.importXML(project.content)
                 .then(() => {
                     toast.success(`Project "${project.name}" loaded successfully!`);
                     setTimeout(() => {
@@ -544,6 +866,17 @@ const BpmnEditor = () => {
     const handleNewProject = () => {
         setProjectId(null);
         setProjectName('Untitled Diagram');
+        
+        // Reset process metadata for new project
+        const emptyMetadata = {
+            processName: '',
+            description: '',
+            processOwner: '',
+            processManager: '',
+        };
+        setProcessMetadata(emptyMetadata);
+        setTableFormData(emptyMetadata);
+        
         if (modeler) {
             modeler.importXML(INITIAL_DIAGRAM).catch((err: any) => {
                 console.error('Error importing BPMN diagram', err);
@@ -685,7 +1018,7 @@ const BpmnEditor = () => {
     };
 
     // Function to save the new project name
-    const handleSaveRename = () => {
+    const handleSaveRename = async () => {
         if (tempProjectName.trim() === '') {
             toast.error('Project name cannot be empty');
             return;
@@ -703,10 +1036,10 @@ const BpmnEditor = () => {
                     const { svg } = await modeler.saveSVG();
 
                     // Save project with the new name
-                    saveProject({
+                    await saveProjectToAPI({
                         id: projectId,
                         name: tempProjectName,
-                        lastEdited: new Date().toISOString().split('T')[0],
+                        lastEdited: new Date().toISOString(),
                         xml,
                         preview: svg
                     }, user.id, user.role);
@@ -782,7 +1115,7 @@ const BpmnEditor = () => {
         return () => {
             document.removeEventListener('keydown', handleKeyDown);
         };
-    }, [modeler, projectName, projectId, user, isRenaming]); // Add isRenaming to dependencies
+    }, [modeler, projectName, projectId, user, isRenaming, handleSaveProject]); // Add handleSaveProject to dependencies
 
     // Function to import JSON file
     const handleJsonImport = async (file: File) => {
@@ -1098,7 +1431,169 @@ const BpmnEditor = () => {
         });
     };
 
-    // Handle Excel import
+    // Enhanced import function that creates file in tree and saves to database
+    const handleEnhancedImport = async (file: File, importType: 'json' | 'xml' | 'excel') => {
+        if (!modeler || !user) {
+            toast.error('Editor or user not available');
+            return;
+        }
+
+        try {
+            setImportingFile(true);
+            toast.loading(`Importing ${importType.toUpperCase()} file...`, { id: 'importing' });
+
+            let xmlContent = '';
+            let fileName = file.name.replace(/\.[^/.]+$/, "");
+
+            // Process the file based on type
+            switch (importType) {
+                case 'json':
+                    const jsonResult = await processJsonImport(file);
+                    xmlContent = jsonResult.xml;
+                    fileName = jsonResult.fileName;
+                    break;
+                case 'xml':
+                    const xmlResult = await processXmlImport(file);
+                    xmlContent = xmlResult.xml;
+                    fileName = xmlResult.fileName;
+                    break;
+                case 'excel':
+                    const excelResult = await processExcelImport(file);
+                    xmlContent = excelResult.xml;
+                    fileName = excelResult.fileName;
+                    break;
+            }
+
+            if (!xmlContent) {
+                toast.error('Failed to process file', { id: 'importing' });
+                setImportingFile(false);
+                return;
+            }
+
+            // Import the XML into the modeler
+            await modeler.importXML(xmlContent);
+            
+            // Update project name
+            setProjectName(fileName);
+
+            // Create new file in database and file tree
+            await createImportedFile(fileName, xmlContent, file.name);
+
+            toast.success(`${importType.toUpperCase()} file "${file.name}" imported and saved successfully!`, { id: 'importing' });
+
+        } catch (error) {
+            console.error(`Error importing ${importType} file:`, error);
+            toast.error(`Failed to import ${importType.toUpperCase()} file`, { id: 'importing' });
+        } finally {
+            setImportingFile(false);
+        }
+    };
+
+    // Process JSON import
+    const processJsonImport = async (file: File): Promise<{ xml: string; fileName: string }> => {
+        const fileContent = await file.text();
+        const jsonData = JSON.parse(fileContent);
+        let xmlContent = '';
+        let fileName = file.name.replace(/\.[^/.]+$/, "");
+
+        // Check if the JSON has the expected structure (from previous export)
+        if (jsonData['bpmn:definitions']) {
+            const { XMLBuilder } = require('fast-xml-parser');
+            const builder = new XMLBuilder({
+                attributeNamePrefix: '@_',
+                textNodeName: '#text',
+                ignoreAttributes: false,
+                format: true,
+                suppressEmptyNode: false
+            });
+            xmlContent = builder.build(jsonData);
+            if (!xmlContent.startsWith('<?xml')) {
+                xmlContent = '<?xml version="1.0" encoding="UTF-8"?>\n' + xmlContent;
+            }
+        }
+        // Check if this is a BPMN meta-model JSON (company format)
+        else if (jsonData.name === "BPMN20" && jsonData.types && Array.isArray(jsonData.types)) {
+            xmlContent = convertMetaModelToBPMN(jsonData);
+        } else {
+            throw new Error('Invalid JSON structure for BPMN diagram');
+        }
+
+        return { xml: xmlContent, fileName };
+    };
+
+    // Process XML import
+    const processXmlImport = async (file: File): Promise<{ xml: string; fileName: string }> => {
+        const xmlContent = await file.text();
+        const fileName = file.name.replace(/\.[^/.]+$/, "");
+        return { xml: xmlContent, fileName };
+    };
+
+    // Process Excel import
+    const processExcelImport = async (file: File): Promise<{ xml: string; fileName: string }> => {
+        const data = await readExcelFile(file);
+        if (!data || data.length === 0) {
+            throw new Error('Excel file is empty or invalid');
+        }
+
+        let fileName = file.name.replace(/\.[^/.]+$/, "");
+        let processName = fileName || 'Excel Generated Process';
+
+        // Extract process name from the Excel data
+        if (data.length > 0) {
+            const nameColumns = ['process_name', 'Process_name', 'ProcessName', 'process name',
+                'Process Name', 'process', 'Process'];
+
+            for (const column of nameColumns) {
+                if (data[0][column] && typeof data[0][column] === 'string') {
+                    const value = data[0][column];
+                    if (data.every(row => row[column] === value)) {
+                        processName = value;
+                        break;
+                    }
+                }
+            }
+        }
+
+        const xmlContent = convertExcelToBpmn(data, fileName);
+        return { xml: xmlContent, fileName: processName };
+    };
+
+    // Create imported file in database and file tree
+    const createImportedFile = async (fileName: string, xmlContent: string, originalFileName: string) => {
+        if (!user) return;
+
+        try {
+            // Create the file using the BPMN node API (this creates it in the file tree)
+            const request: CreateNodeRequest = {
+                userId: user.id,
+                type: 'file',
+                name: fileName,
+                content: xmlContent,
+                processMetadata: {
+                    processName: fileName,
+                    description: `Imported from ${originalFileName}`,
+                    processOwner: '',
+                    processManager: '',
+                }
+            };
+
+            // Create the file in the file tree
+            const newNode = await createBpmnNode(request);
+            
+            // Update current project state
+            setProjectId(newNode.id);
+            
+            // Refresh file tree to show the new file
+            refreshFileTree();
+            
+            console.log('Imported file created successfully:', fileName);
+        } catch (error) {
+            console.error('Error creating imported file:', error);
+            throw error;
+        }
+    };
+
+    // Handle Excel import (legacy - keeping for compatibility)
     const handleExcelImport = async (file: File) => {
         try {
             setImportingFile(true);
@@ -1987,58 +2482,50 @@ const BpmnEditor = () => {
         );
     }
 
-    // Add this function to handle file uploads from the file tree
+    // Enhanced file upload function that creates file in tree and saves to database
     const handleFileUpload = async (file: File, fileType: 'bpmn' | 'json' | 'excel') => {
-        let xml = '';
-        let name = file.name.replace(/\.[^/.]+$/, "");
+        if (!user) {
+            toast.error('User not available');
+            return;
+        }
+
         try {
-            if (fileType === 'bpmn') {
-                // Read as text and treat as BPMN XML
-                xml = await file.text();
-            } else if (fileType === 'json') {
-                // Read as text, parse JSON, convert to XML
-                const jsonText = await file.text();
-                const jsonData = JSON.parse(jsonText);
-                if (jsonData['bpmn:definitions']) {
-                    // Use fast-xml-parser to convert JSON to XML
-                    const { XMLBuilder } = require('fast-xml-parser');
-                    const builder = new XMLBuilder({
-                        attributeNamePrefix: '@_',
-                        textNodeName: '#text',
-                        ignoreAttributes: false,
-                        format: true,
-                        suppressEmptyNode: false
-                    });
-                    xml = builder.build(jsonData);
-                    if (!xml.startsWith('<?xml')) {
-                        xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + xml;
-                    }
-                } else {
-                    toast.error('Invalid JSON structure for BPMN diagram.');
-                    return;
-                }
-            } else if (fileType === 'excel') {
-                // Use XLSX to read Excel and convert to BPMN XML
-                const data = await readExcelFile(file);
-                if (!data || data.length === 0) {
-                    toast.error('Excel file is empty or invalid');
-                    return;
-                }
-                xml = convertExcelToBpmn(data, name);
+            toast.loading(`Uploading ${fileType.toUpperCase()} file...`, { id: 'uploading' });
+
+            let xmlContent = '';
+            let fileName = file.name.replace(/\.[^/.]+$/, "");
+
+            // Process the file based on type
+            switch (fileType) {
+                case 'bpmn':
+                    // Read as text and treat as BPMN XML (no conversion needed)
+                    xmlContent = await file.text();
+                    break;
+                case 'json':
+                    const jsonResult = await processJsonImport(file);
+                    xmlContent = jsonResult.xml;
+                    fileName = jsonResult.fileName;
+                    break;
+                case 'excel':
+                    const excelResult = await processExcelImport(file);
+                    xmlContent = excelResult.xml;
+                    fileName = excelResult.fileName;
+                    break;
             }
-            // Save as a new project
-            const id = uuidv4();
-            saveProject({
-                id,
-                name,
-                lastEdited: new Date().toISOString().split('T')[0],
-                xml
-            }, user?.id, user?.role);
-            toast.success(`File "${file.name}" uploaded as project!`);
-            // Refresh the file tree to show the new project
-            refreshFileTree();
-        } catch (err) {
-            toast.error('Failed to upload file: ' + ((err as Error)?.message || err));
+
+            if (!xmlContent) {
+                toast.error('Failed to process file', { id: 'uploading' });
+                return;
+            }
+
+            // Create new file in database and file tree
+            await createImportedFile(fileName, xmlContent, file.name);
+
+            toast.success(`${fileType.toUpperCase()} file "${file.name}" uploaded and saved successfully!`, { id: 'uploading' });
+
+        } catch (error) {
+            console.error(`Error uploading ${fileType} file:`, error);
+            toast.error(`Failed to upload ${fileType.toUpperCase()} file`, { id: 'uploading' });
         }
     };
 
@@ -2055,52 +2542,184 @@ const BpmnEditor = () => {
             // Get current BPMN XML
             const { xml } = await modeler.saveXML({ format: true });
             
-            // Get current project info for file naming
-            const currentProject = projectId ? await getProjectById(projectId, user.id, user.role) : null;
-            const fileName = currentProject?.name || 'untitled_diagram';
+            // Use the current project name from state, or get from API if available
+            let fileName = projectName;
+            let currentProcessMetadata = processMetadata;
             
-            // Convert BPMN to LaTeX
-            const latexContent = convertBpmnToLatex(xml, fileName);
+            // If we have a projectId, try to get the latest metadata from API
+            if (projectId) {
+                const currentProject = await getProjectByIdFromAPI(projectId);
+                if (currentProject) {
+                    fileName = currentProject.name;
+                    currentProcessMetadata = currentProject.processMetadata || processMetadata;
+                }
+            }
+            
+            // Fallback to untitled if no name is set
+            if (!fileName || fileName === 'Untitled Diagram') {
+                fileName = 'untitled_diagram';
+            }
+            
+            console.log('Generating LaTeX from BPMN:', { fileName, hasMetadata: !!currentProcessMetadata });
+            
+            // Convert BPMN to LaTeX with process metadata
+            const latexContent = convertBpmnToLatex(xml, fileName, currentProcessMetadata);
             
             // Create LaTeX project
-            const latexProject = {
+            const latexProject: LatexProject = {
                 id: `latex-${Date.now()}`,
-                name: `${fileName.replace(/[^a-zA-Z0-9]/g, '_')}_bpmn.tex`,
+                name: `${fileName}.tex`,
                 content: latexContent,
                 lastEdited: new Date().toISOString().split('T')[0],
                 createdBy: user.id,
                 role: user.role
             };
             
-            // Save to LaTeX storage
-            saveLatexProject(latexProject, user.id, user.role);
+            console.log('Generated LaTeX project:', latexProject);
             
-            // Update LaTeX file tree
-            const savedTree = getLatexFileTree(user.id, user.role);
-            const newFileNode: FileTreeNode = {
-                id: latexProject.id,
-                name: latexProject.name,
-                type: 'file' as const,
-                projectData: latexProject,
-                path: latexProject.name
-            };
-            const updatedTree = [...savedTree, newFileNode];
-            saveLatexFileTree(updatedTree, user.id, user.role);
+            // Save to database first
+            const saveSuccess = await saveLatexProjectToAPI(latexProject, user.id, user.role);
             
-            // Show success message
-            toast.success(`LaTeX file generated successfully: ${latexProject.name}`, {
-                duration: 4000,
-                position: 'bottom-right'
-            });
+            if (!saveSuccess) {
+                console.log('Failed to save to database, saving locally only');
+                // Fallback to local storage only
+                saveLatexProject(latexProject, user.id, user.role);
+                
+                // Still update the file tree locally
+                const savedTree = getLatexFileTree(user.id, user.role);
+                const newFileNode: FileTreeNode = {
+                    id: latexProject.id,
+                    name: latexProject.name,
+                    type: 'file' as const,
+                    projectData: latexProject,
+                    path: latexProject.name
+                };
+                const updatedTree = [...savedTree, newFileNode];
+                saveLatexFileTree(updatedTree, user.id, user.role);
+                
+                toast.success(`LaTeX file generated and saved locally: ${latexProject.name}`, {
+                    duration: 4000,
+                    position: 'bottom-right'
+                });
+            } else {
+                console.log('Successfully saved to database');
+                // Also save to localStorage for backward compatibility
+                saveLatexProject(latexProject, user.id, user.role);
+                
+                // Add the new file to the hierarchical tree structure
+                try {
+                    const newNodeResponse = await fetch('/api/latex-nodes', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: user.id,
+                            type: 'file',
+                            name: latexProject.name,
+                            parentId: null, // Add to root level
+                            content: latexProject.content,
+                            documentMetadata: {
+                                title: latexProject.name,
+                                author: '',
+                                description: '',
+                                tags: [],
+                            }
+                        })
+                    });
+                    
+                    if (newNodeResponse.ok) {
+                        console.log('File added to hierarchical tree successfully');
+                    } else {
+                        console.log('Failed to add file to hierarchical tree');
+                        const errorText = await newNodeResponse.text();
+                        console.error('Tree update error:', errorText);
+                    }
+                } catch (error) {
+                    console.error('Error adding file to hierarchical tree:', error);
+                }
+                
+                // Show success message
+                toast.success(`LaTeX file generated and saved to database: ${latexProject.name}`, {
+                    duration: 4000,
+                    position: 'bottom-right'
+                });
+            }
             
-            // Optionally, you could open the LaTeX editor here
-            // For now, just show the success message
+            // Open the LaTeX editor with the generated content
+            router.push(`/latex-advanced?content=${encodeURIComponent(latexContent)}&fileName=${encodeURIComponent(latexProject.name)}`);
             
         } catch (error) {
             console.error('Error generating LaTeX file:', error);
             toast.error('Failed to generate LaTeX file. Please try again.');
         } finally {
             setGeneratingLatex(false);
+        }
+    };
+
+    // Function to create a new file with proper metadata
+    const createNewFileWithMetadata = async (fileName: string) => {
+        if (!modeler || !user) return;
+
+        try {
+            setIsSaving(true);
+
+            // Get the current XML
+            const { xml } = await modeler.saveXML({ format: true });
+            const { svg } = await modeler.saveSVG();
+
+            // Create a new project with empty metadata
+            const newProjectId = uuidv4();
+            const newProject: BpmnProject = {
+                id: newProjectId,
+                name: fileName,
+                lastEdited: new Date().toISOString(),
+                createdBy: user.id,
+                role: user.role,
+                xml,
+                preview: svg,
+                processMetadata: {
+                    processName: '',
+                    description: '',
+                    processOwner: '',
+                    processManager: '',
+                }
+            };
+
+            // Save the project to the database
+            const result = await saveProjectToAPI(newProject, user.id, user.role);
+            
+            if (result.success) {
+                // Update the current project state with the actual fileId from the database
+                const actualFileId = result.fileId || newProjectId;
+                setProjectId(actualFileId);
+                setProjectName(fileName);
+                
+                // Reset metadata to empty
+                const emptyMetadata = {
+                    processName: '',
+                    description: '',
+                    processOwner: '',
+                    processManager: '',
+                };
+                setProcessMetadata(emptyMetadata);
+                setTableFormData(emptyMetadata);
+
+                // Update the project with the actual fileId
+                const updatedProject = { ...newProject, id: actualFileId };
+
+                // Create the file in the file tree
+                if (onCreateFileFromEditor) {
+                    await onCreateFileFromEditor(updatedProject);
+                }
+
+                toast.success(`File "${fileName}" created successfully!`);
+            } else {
+                toast.error(`Failed to create file: ${result.error}`);
+            }
+        } catch (err) {
+            console.error('Error creating new file:', err);
+            toast.error('Failed to create file');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -2116,6 +2735,7 @@ const BpmnEditor = () => {
                         onNewProject={handleNewProject}
                         onFileUpload={handleFileUpload}
                         currentProjectId={projectId}
+                        onCreateFileFromEditor={handleCreateFileFromEditor}
                     />
                     {/* Collapse Arrow */}
                     <button
@@ -2177,6 +2797,7 @@ const BpmnEditor = () => {
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
                                     1. Process Name
                                 </label>
+                                {isEditingProcessDetails ? (
                                 <input
                                     type="text"
                                     value={tableFormData.processName}
@@ -2184,87 +2805,98 @@ const BpmnEditor = () => {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     placeholder="Enter process name"
                                 />
+                                ) : (
+                                    <div className="text-gray-700 min-h-[24px] flex items-center">
+                                        {tableFormData.processName || 'No process name entered'}
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Task */}
+                            {/* Description */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    2. Task
+                                    2. Description
                                 </label>
+                                {isEditingProcessDetails ? (
                                 <textarea
-                                    value={tableFormData.task}
-                                    onChange={(e) => setTableFormData(prev => ({ ...prev, task: e.target.value }))}
+                                    value={tableFormData.description}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, description: e.target.value }))}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="Enter task description"
+                                    placeholder="Enter description"
                                     rows={3}
                                 />
+                                ) : (
+                                    <div className="text-gray-700 min-h-[24px] whitespace-pre-wrap">
+                                        {tableFormData.description || 'No description entered'}
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Procedure */}
+                            {/* Process Owner */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    3. Procedure
+                                    3. Process Owner
                                 </label>
+                                {isEditingProcessDetails ? (
                                 <textarea
-                                    value={tableFormData.procedure}
-                                    onChange={(e) => setTableFormData(prev => ({ ...prev, procedure: e.target.value }))}
+                                    value={tableFormData.processOwner}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, processOwner: e.target.value }))}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="Enter procedure steps"
+                                    placeholder="Enter process owner"
                                     rows={4}
                                 />
+                                ) : (
+                                    <div className="text-gray-700 min-h-[24px] whitespace-pre-wrap">
+                                        {tableFormData.processOwner || 'No process owner entered'}
+                                    </div>
+                                )}
                             </div>
 
-                            {/* Tools/References */}
+                            {/* Process Manager */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    4. Tools/References
+                                    4. Process Manager
                                 </label>
+                                {isEditingProcessDetails ? (
                                 <textarea
-                                    value={tableFormData.toolsReferences}
-                                    onChange={(e) => setTableFormData(prev => ({ ...prev, toolsReferences: e.target.value }))}
+                                    value={tableFormData.processManager}
+                                    onChange={(e) => setTableFormData(prev => ({ ...prev, processManager: e.target.value }))}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="Enter tools and references"
+                                    placeholder="Enter process manager"
                                     rows={3}
                                 />
-                            </div>
-
-                            {/* Role */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    5. Role
-                                </label>
-                                <input
-                                    type="text"
-                                    value={tableFormData.role}
-                                    onChange={(e) => setTableFormData(prev => ({ ...prev, role: e.target.value }))}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    placeholder="Enter role"
-                                />
+                                ) : (
+                                    <div className="text-gray-700 min-h-[24px] whitespace-pre-wrap">
+                                        {tableFormData.processManager || 'No process manager entered'}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Action Buttons */}
                             <div className="flex space-x-2 pt-4">
+                                {isEditingProcessDetails ? (
+                                    <>
                                 <button
-                                    onClick={() => {
-                                        // Save the form data (you can implement saving logic here)
-                                        toast.success('Process details saved!');
-                                    }}
+                                            onClick={handleSaveProcessDetails}
                                     className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                 >
                                     Save
                                 </button>
                                 <button
-                                    onClick={() => setTableFormData({
-                                        processName: '',
-                                        task: '',
-                                        procedure: '',
-                                        toolsReferences: '',
-                                        role: ''
-                                    })}
+                                            onClick={handleClearProcessDetails}
                                     className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
                                 >
                                     Clear
                                 </button>
+                                    </>
+                                ) : (
+                                    <button
+                                        onClick={handleToggleProcessDetailsEdit}
+                                        className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                    >
+                                        Edit
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -2313,91 +2945,31 @@ const BpmnEditor = () => {
             <div className={`flex flex-1 flex-col min-w-0 overflow-hidden order-2${sidebarCollapsed ? ' ml-14' : ''}${tablePaneCollapsed ? ' mr-14' : ''}`}>
                 {/* Toolbar with icons */}
                 <div className="bg-white border-b px-2 py-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                    {/* Back button */}
-                    <button
-                        onClick={handleBackToDashboard}
-                        className="inline-flex items-center justify-center p-1 rounded focus:outline-none"
-                        title="Back to Dashboard"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-                        </svg>
-                    </button>
-
-                    {/* Project name (editable or display) */}
+                    {/* Project name (display only, no rename) */}
                     <div className="text-gray-700 font-medium ml-2 flex items-center overflow-hidden">
-                        {isRenaming ? (
-                            <div className="flex items-center">
-                                <input
-                                    ref={projectNameInputRef}
-                                    type="text"
-                                    value={tempProjectName}
-                                    onChange={(e) => setTempProjectName(e.target.value)}
-                                    onKeyDown={handleRenameKeyDown}
-                                    className="border border-gray-300 rounded px-2 py-1 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    placeholder="Enter project name"
-                                />
-                                <button
-                                    onClick={handleSaveRename}
-                                    className="ml-2 p-1 text-green-600 hover:bg-green-50 rounded"
-                                    title="Save"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                    </svg>
-                                </button>
-                                <button
-                                    onClick={handleCancelRename}
-                                    className="ml-1 p-1 text-red-600 hover:bg-red-50 rounded"
-                                    title="Cancel"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                                    </svg>
-                                </button>
-                            </div>
-                        ) : (
                             <div className="flex items-center truncate max-w-md">
                                 <span className="mr-2 truncate">
                                     {projectName}
                                     {projectId ? ` (ID: ${projectId})` : ''}
                                 </span>
-                                <button
-                                    onClick={handleStartRename}
-                                    className="p-1 text-gray-500 hover:bg-gray-100 rounded shrink-0"
-                                    title="Rename Project"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                        <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
-                                    </svg>
-                                </button>
                             </div>
-                        )}
                     </div>
 
                     <div className="h-6 border-l border-gray-300 mx-1"></div>
 
                     {/* Middle section buttons */}
                     <div className="flex items-center space-x-4 flex-grow">
-                        {/* New Diagram */}
-                        <button
-                            onClick={handleNew}
-                            className="inline-flex items-center justify-center p-1 rounded focus:outline-none"
-                            title="New Diagram"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V8z" clipRule="evenodd" />
-                            </svg>
-                        </button>
-
-                        <div className="h-6 border-l border-gray-300 mx-1"></div>
 
                         {/* Import Dropdown */}
                         <div className="relative import-dropdown">
                             <button
                                 onClick={toggleImportDropdown}
                                 disabled={importingFile}
-                                className={`inline-flex items-center justify-center p-1 rounded focus:outline-none ${importingFile ? 'text-orange-400' : 'text-orange-600 hover:bg-orange-50'} transition-colors`}
+                                className={`inline-flex items-center justify-center px-3 py-1.5 rounded-md border focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 whitespace-nowrap min-w-[140px] ${
+                                    importingFile 
+                                        ? 'bg-orange-100 border-orange-200 text-orange-400 cursor-not-allowed' 
+                                        : 'bg-orange-50 border-orange-200 text-orange-700 hover:bg-orange-100 hover:border-orange-300 focus:ring-orange-500 shadow-sm'
+                                }`}
                                 title="Import Diagram"
                             >
                                 {importingFile ? (
@@ -2410,7 +2982,7 @@ const BpmnEditor = () => {
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                                         </svg>
-                                        <span className="ml-1 font-medium text-sm">Import</span>
+                                        <span className="ml-2 font-medium text-sm">Import</span>
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
                                             <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
                                         </svg>
@@ -2430,7 +3002,7 @@ const BpmnEditor = () => {
                                                 jsonFileInput.onchange = (e: any) => {
                                                     const file = e.target.files?.[0];
                                                     if (file && modeler) {
-                                                        handleJsonImport(file);
+                                                        handleEnhancedImport(file, 'json');
                                                     }
                                                 };
                                                 jsonFileInput.click();
@@ -2456,7 +3028,7 @@ const BpmnEditor = () => {
                                                 bpmnFileInput.onchange = (e: any) => {
                                                     const file = e.target.files?.[0];
                                                     if (file && modeler) {
-                                                        handleXmlImport(file);
+                                                        handleEnhancedImport(file, 'xml');
                                                     }
                                                 };
                                                 bpmnFileInput.click();
@@ -2482,7 +3054,7 @@ const BpmnEditor = () => {
                                                 excelFileInput.onchange = (e: any) => {
                                                     const file = e.target.files?.[0];
                                                     if (file && modeler) {
-                                                        handleExcelImport(file);
+                                                        handleEnhancedImport(file, 'excel');
                                                     }
                                                 };
                                                 excelFileInput.click();
@@ -2509,7 +3081,11 @@ const BpmnEditor = () => {
                         <button
                             onClick={handleSaveProject}
                             disabled={downloading}
-                            className={`inline-flex items-center justify-center p-1 rounded focus:outline-none ${downloading ? 'text-green-400' : 'text-green-600 hover:bg-green-50'} transition-colors`}
+                            className={`inline-flex items-center justify-center px-3 py-1.5 rounded-md border focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 whitespace-nowrap min-w-[140px] ${
+                                downloading 
+                                    ? 'bg-green-100 border-green-200 text-green-400 cursor-not-allowed' 
+                                    : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100 hover:border-green-300 focus:ring-green-500 shadow-sm'
+                            }`}
                             title="Save Project (Ctrl+S)"
                         >
                             {downloading ? (
@@ -2518,9 +3094,12 @@ const BpmnEditor = () => {
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
                             ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                                    <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
-                                </svg>
+                                <div className="flex items-center">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                        <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h5a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V8a2 2 0 012-2h5v5.586l-1.293-1.293zM9 4a1 1 0 012 0v2H9V4z" />
+                                    </svg>
+                                    <span className="ml-1 font-medium text-sm">Save</span>
+                                </div>
                             )}
                         </button>
                         
@@ -2539,7 +3118,11 @@ const BpmnEditor = () => {
                             <button
                                 onClick={toggleExportDropdown}
                                 disabled={exportingFile}
-                                className={`inline-flex items-center justify-center p-1 rounded focus:outline-none ${exportingFile ? 'text-blue-400' : 'text-blue-600 hover:bg-blue-50'} transition-colors`}
+                                className={`inline-flex items-center justify-center px-3 py-1.5 rounded-md border focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 whitespace-nowrap min-w-[140px] ${
+                                    exportingFile 
+                                        ? 'bg-blue-100 border-blue-200 text-blue-400 cursor-not-allowed' 
+                                        : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300 focus:ring-blue-500 shadow-sm'
+                                }`}
                                 title="Export Diagram"
                             >
                                 {exportingFile ? (
@@ -2659,7 +3242,7 @@ const BpmnEditor = () => {
                         {/* View Diagram */}
                         <button
                             onClick={handleOpenViewer}
-                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-purple-100 text-purple-600 hover:bg-purple-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px]"
+                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-md border focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 whitespace-nowrap min-w-[140px] bg-purple-50 border-purple-200 text-purple-700 hover:bg-purple-100 hover:border-purple-300 focus:ring-purple-500 shadow-sm"
                             title="View Diagram"
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -2672,7 +3255,11 @@ const BpmnEditor = () => {
                         <button
                             onClick={handleGenerateLatex}
                             disabled={generatingLatex}
-                            className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-yellow-100 text-yellow-700 hover:bg-yellow-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px] disabled:opacity-50 disabled:cursor-not-allowed"
+                            className={`inline-flex items-center justify-center px-3 py-1.5 rounded-md border focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 whitespace-nowrap min-w-[140px] ${
+                                generatingLatex 
+                                    ? 'bg-yellow-100 border-yellow-200 text-yellow-400 cursor-not-allowed opacity-50' 
+                                    : 'bg-yellow-50 border-yellow-200 text-yellow-700 hover:bg-yellow-100 hover:border-yellow-300 focus:ring-yellow-500 shadow-sm'
+                            }`}
                             title="Generate LaTeX File"
                         >
                             {generatingLatex ? (
@@ -2699,7 +3286,11 @@ const BpmnEditor = () => {
                             <button
                                 onClick={handleSendForApproval}
                                 disabled={sendingForApproval}
-                                className="inline-flex items-center justify-center px-3 py-1.5 rounded-md bg-green-100 text-green-600 hover:bg-green-200 transition-colors focus:outline-none whitespace-nowrap min-w-[140px]"
+                                className={`inline-flex items-center justify-center px-3 py-1.5 rounded-md border focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-200 whitespace-nowrap min-w-[140px] ${
+                                    sendingForApproval 
+                                        ? 'bg-green-100 border-green-200 text-green-400 cursor-not-allowed opacity-50' 
+                                        : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100 hover:border-green-300 focus:ring-green-500 shadow-sm'
+                                }`}
                                 title="Send for Approval"
                             >
                                 {sendingForApproval ? (
@@ -2728,8 +3319,13 @@ const BpmnEditor = () => {
                     {/* Editor Container */}
                     <div
                         ref={containerRef}
-                        className="flex-1 min-w-0 bg-white"
-                        style={{ height: 'calc(100vh - 140px)' }}
+                        className="flex-1 min-w-0 bg-white relative"
+                        style={{ 
+                            height: 'calc(100vh - 140px)',
+                            minHeight: '500px',
+                            display: 'block',
+                            position: 'relative'
+                        }}
                     />
                 </div>
 

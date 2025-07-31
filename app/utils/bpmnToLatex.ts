@@ -27,6 +27,7 @@ interface BpmnLane {
 }
 
 interface ProcessTableRow {
+    stepSeq: string;
     processName: string;
     task: string;
     procedure: string;
@@ -34,7 +35,14 @@ interface ProcessTableRow {
     role: string;
 }
 
-export function convertBpmnToLatex(bpmnXml: string, fileName: string): string {
+interface ProcessMetadata {
+    processName: string;
+    description: string;
+    processOwner: string;
+    processManager: string;
+}
+
+export function convertBpmnToLatex(bpmnXml: string, fileName: string, processMetadata?: ProcessMetadata): string {
     try {
         const parser = new XMLParser({
             ignoreAttributes: false,
@@ -107,23 +115,46 @@ export function convertBpmnToLatex(bpmnXml: string, fileName: string): string {
             }
         }
         
-        // Extract lanes
+        // Extract lanes from participants (if present)
         if (parsed['bpmn:definitions']?.['bpmn:collaboration']?.['bpmn:participant']) {
             const participants = Array.isArray(parsed['bpmn:definitions']['bpmn:collaboration']['bpmn:participant'])
                 ? parsed['bpmn:definitions']['bpmn:collaboration']['bpmn:participant']
                 : [parsed['bpmn:definitions']['bpmn:collaboration']['bpmn:participant']];
             
             participants.forEach((participant: any) => {
+                // Add participant as a process element
+                const participantElement: BpmnElement = {
+                    id: participant['@_id'],
+                    name: participant['@_name'],
+                    type: 'participant',
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0
+                };
+                elements.push(participantElement);
+                
+                // Extract lanes from this participant
                 if (participant['bpmn:laneSet']?.['bpmn:lane']) {
                     const participantLanes = Array.isArray(participant['bpmn:laneSet']['bpmn:lane'])
                         ? participant['bpmn:laneSet']['bpmn:lane']
                         : [participant['bpmn:laneSet']['bpmn:lane']];
                     
                     participantLanes.forEach((lane: any) => {
+                        // Handle flowNodeRef - it can be a string or array
+                        let flowNodeRefs: string[] = [];
+                        if (lane['bpmn:flowNodeRef']) {
+                            if (Array.isArray(lane['bpmn:flowNodeRef'])) {
+                                flowNodeRefs = lane['bpmn:flowNodeRef'];
+                            } else {
+                                flowNodeRefs = [lane['bpmn:flowNodeRef']];
+                            }
+                        }
+                        
                         const laneObj: BpmnLane = {
                             id: lane['@_id'],
                             name: lane['@_name'],
-                            elements: lane['bpmn:flowNodeRef'] || []
+                            elements: flowNodeRefs
                         };
                         lanes.push(laneObj);
                     });
@@ -131,8 +162,31 @@ export function convertBpmnToLatex(bpmnXml: string, fileName: string): string {
             });
         }
         
+        // Extract lanes directly from process (for diagrams like your XML)
+        if (parsed['bpmn:definitions']?.['bpmn:process']?.['bpmn:laneSet']?.['bpmn:lane']) {
+            const processLanes = Array.isArray(parsed['bpmn:definitions']['bpmn:process']['bpmn:laneSet']['bpmn:lane'])
+                ? parsed['bpmn:definitions']['bpmn:process']['bpmn:laneSet']['bpmn:lane']
+                : [parsed['bpmn:definitions']['bpmn:process']['bpmn:laneSet']['bpmn:lane']];
+            processLanes.forEach((lane: any) => {
+                let flowNodeRefs: string[] = [];
+                if (lane['bpmn:flowNodeRef']) {
+                    if (Array.isArray(lane['bpmn:flowNodeRef'])) {
+                        flowNodeRefs = lane['bpmn:flowNodeRef'];
+                    } else {
+                        flowNodeRefs = [lane['bpmn:flowNodeRef']];
+                    }
+                }
+                const laneObj: BpmnLane = {
+                    id: lane['@_id'],
+                    name: lane['@_name'],
+                    elements: flowNodeRefs
+                };
+                lanes.push(laneObj);
+            });
+        }
+        
         // Generate LaTeX code with process table
-        return generateLatexCodeWithTable(elements, flows, lanes, fileName);
+        return generateLatexCodeWithTable(elements, flows, lanes, fileName, processMetadata);
         
     } catch (error) {
         console.error('Error converting BPMN to LaTeX:', error);
@@ -151,6 +205,16 @@ function getElementType(elementId: string): string {
 }
 
 function getElementName(parsed: any, elementId: string): string {
+    // First check if it's a participant in collaboration
+    if (parsed['bpmn:definitions']?.['bpmn:collaboration']?.['bpmn:participant']) {
+        const participants = Array.isArray(parsed['bpmn:definitions']['bpmn:collaboration']['bpmn:participant'])
+            ? parsed['bpmn:definitions']['bpmn:collaboration']['bpmn:participant']
+            : [parsed['bpmn:definitions']['bpmn:collaboration']['bpmn:participant']];
+        
+        const participant = participants.find((p: any) => p['@_id'] === elementId);
+        if (participant) return participant['@_name'] || 'Participant';
+    }
+    
     // Search for element name in the BPMN process
     if (parsed['bpmn:definitions']?.['bpmn:process']) {
         const process = parsed['bpmn:definitions']['bpmn:process'];
@@ -213,31 +277,46 @@ function getFlowTarget(parsed: any, flowId: string): string {
     return '';
 }
 
+// Helper to sort lanes by their vertical position (y coordinate)
+function sortLanesByY(lanes: BpmnLane[], elements: BpmnElement[]): BpmnLane[] {
+    // Find the corresponding element for each lane to get its y position
+    return lanes.slice().sort((a, b) => {
+        const aElem = elements.find(e => e.id === a.id);
+        const bElem = elements.find(e => e.id === b.id);
+        const aY = aElem ? aElem.y : 0;
+        const bY = bElem ? bElem.y : 0;
+        return aY - bY;
+    });
+}
+
 function extractProcessTableData(elements: BpmnElement[], lanes: BpmnLane[]): ProcessTableRow[] {
     const tableData: ProcessTableRow[] = [];
-    
-    // Get process name from participant or first element
-    const processName = getProcessName(elements, lanes);
-    
-    // Extract tasks and their associated lanes
-    elements.forEach(element => {
-        if (element.type === 'task' && element.name) {
-            // Find which lane this task belongs to
-            const lane = lanes.find(l => l.elements.includes(element.id));
-            const role = lane?.name || 'Actor';
-            
-            const row: ProcessTableRow = {
-                processName: processName,
-                task: element.name,
-                procedure: element.name, // For now, same as task
-                toolsReferences: '', // For now, blank
-                role: role
-            };
-            
-            tableData.push(row);
+    // Sort lanes by vertical position (top to bottom)
+    const sortedLanes = sortLanesByY(lanes, elements);
+    // Group tasks by lane
+    sortedLanes.forEach((lane, laneIdx) => {
+        // Ensure lane.elements is always an array of strings
+        let laneElements: string[] = [];
+        if (Array.isArray(lane.elements)) {
+            laneElements = lane.elements;
+        } else if (typeof lane.elements === 'string') {
+            laneElements = [lane.elements];
         }
+        // Find all tasks in this lane
+        const laneTasks = elements.filter(e => e.type === 'task' && laneElements.includes(e.id));
+        // Step sequence prefix for this lane
+        const stepPrefix = `${laneIdx + 1}`;
+        laneTasks.forEach((task, taskIdx) => {
+            tableData.push({
+                stepSeq: `${stepPrefix}.${taskIdx + 1}`,
+                processName: getProcessName(elements, lanes),
+                task: task.name || '',
+                procedure: task.name || '',
+                toolsReferences: '',
+                role: (typeof lane.name === 'string' && lane.name.trim() !== '') ? lane.name : 'Actor',
+            });
+        });
     });
-    
     return tableData;
 }
 
@@ -248,7 +327,7 @@ function getProcessName(elements: BpmnElement[], lanes: BpmnLane[]): string {
         return participant.name;
     }
     
-    // Try to get from lane name
+    // Try to get from first lane name (as fallback)
     if (lanes.length > 0 && lanes[0].name) {
         return lanes[0].name;
     }
@@ -257,28 +336,22 @@ function getProcessName(elements: BpmnElement[], lanes: BpmnLane[]): string {
     return 'Process Name';
 }
 
-function generateLatexCodeWithTable(elements: BpmnElement[], flows: BpmnFlow[], lanes: BpmnLane[], fileName: string): string {
-    // Calculate bounds for scaling
-    const minX = Math.min(...elements.map(e => e.x));
-    const maxX = Math.max(...elements.map(e => e.x + e.width));
-    const minY = Math.min(...elements.map(e => e.y));
-    const maxY = Math.max(...elements.map(e => e.y + e.height));
-    
-    const width = maxX - minX;
-    const height = maxY - minY;
-    
-    // Scale factor to fit on page
-    const scale = Math.min(12 / width, 8 / height);
-    
+function generateLatexCodeWithTable(elements: BpmnElement[], flows: BpmnFlow[], lanes: BpmnLane[], fileName: string, processMetadata?: ProcessMetadata): string {
     // Extract process table data
     const tableData = extractProcessTableData(elements, lanes);
+    // Get the process name for the section heading
+    const processName = getProcessName(elements, lanes);
+    
+    // Use process metadata if available, otherwise use defaults
+    const metadata = processMetadata || {
+        processName: processName,
+        description: 'No description available',
+        processOwner: 'Not specified',
+        processManager: 'Not specified'
+    };
     
     let latex = `\\documentclass{article}
-\\usepackage{tikz}
 \\usepackage{geometry}
-\\usepackage{amsmath}
-\\usepackage{amssymb}
-\\usepackage{longtable}
 \\usepackage{array}
 
 \\geometry{margin=1in}
@@ -291,154 +364,32 @@ function generateLatexCodeWithTable(elements: BpmnElement[], flows: BpmnFlow[], 
 
 \\maketitle
 
-\\section{Process Table}
+\\section{${processName} Table}
 
-\\begin{longtable}{|p{2.5cm}|p{3cm}|p{3cm}|p{3cm}|p{2cm}|}
+\\begin{tabular}{|c|c|c|c|c|c|}
 \\hline
-\\textbf{Process Name} & \\textbf{Task} & \\textbf{Procedure} & \\textbf{Tools/References} & \\textbf{Role} \\\\
+\\textbf{Step} & \\textbf{Process} & \\textbf{Task} & \\textbf{Procedure} & \\textbf{Tools/Refs} & \\textbf{Role} \\\\
 \\hline
-\\endhead
 `;
-
-    // Add table rows
-    if (tableData.length > 0) {
-        tableData.forEach(row => {
-            latex += `${row.processName} & ${row.task} & ${row.procedure} & ${row.toolsReferences} & ${row.role} \\\\\\n`;
-        });
-    } else {
-        // Add a default row if no tasks found
-        latex += `Process Name & Task & Procedure & Tools/References & Actor \\\\\\n`;
-    }
-    
-    latex += `\\hline
-\\end{longtable}
-
-\\section{BPMN Diagram}
-
-\\begin{center}
-\\begin{tikzpicture}[
-    scale=${scale.toFixed(2)},
-    transform shape,
-    every node/.style={font=\\small}
-]
-
-% Define BPMN shapes
-\\tikzstyle{startEvent} = [circle, draw=black, fill=green!20, minimum size=1cm]
-\\tikzstyle{endEvent} = [circle, draw=black, fill=red!20, minimum size=1cm]
-\\tikzstyle{task} = [rectangle, draw=black, fill=blue!20, minimum width=2cm, minimum height=1cm, rounded corners=2pt]
-\\tikzstyle{gateway} = [diamond, draw=black, fill=yellow!20, minimum size=1.5cm]
-\\tikzstyle{flow} = [->, thick, black]
-
-% Draw lanes
+    tableData.forEach((row) => {
+        latex += `${row.stepSeq} & ${row.processName} & ${row.task} & ${row.procedure} & ${row.toolsReferences || '--'} & ${row.role} \\\\
+\\hline
 `;
-
-    // Draw lanes first (background)
-    lanes.forEach((lane, index) => {
-        const laneElements = elements.filter(e => lane.elements.includes(e.id));
-        if (laneElements.length > 0) {
-            const minX = Math.min(...laneElements.map(e => e.x));
-            const maxX = Math.max(...laneElements.map(e => e.x + e.width));
-            const minY = Math.min(...laneElements.map(e => e.y));
-            const maxY = Math.max(...laneElements.map(e => e.y + e.height));
-            
-            latex += `% Lane: ${lane.name || lane.id}
-\\draw[fill=gray!10, draw=gray!50, thick] (${minX}, ${minY}) rectangle (${maxX}, ${maxY});
-\\node[anchor=north west] at (${minX}, ${maxY}) {\\textbf{${lane.name || lane.id}}};
-
-`;
-        }
     });
-    
-    // Draw elements
-    elements.forEach(element => {
-        const x = element.x + element.width / 2;
-        const y = element.y + element.height / 2;
-        
-        switch (element.type) {
-            case 'startEvent':
-                latex += `\\node[startEvent] (${element.id}) at (${x}, ${y}) {};
-\\node[anchor=north] at (${x}, ${y - 0.5}) {\\tiny ${element.name || 'Start'}};
-`;
-                break;
-            case 'endEvent':
-                latex += `\\node[endEvent] (${element.id}) at (${x}, ${y}) {};
-\\node[anchor=north] at (${x}, ${y - 0.5}) {\\tiny ${element.name || 'End'}};
-`;
-                break;
-            case 'task':
-                latex += `\\node[task] (${element.id}) at (${x}, ${y}) {${element.name || 'Task'}};
-`;
-                break;
-            case 'gateway':
-                latex += `\\node[gateway] (${element.id}) at (${x}, ${y}) {};
-\\node[anchor=north] at (${x}, ${y - 0.8}) {\\tiny ${element.name || 'Gateway'}};
-`;
-                break;
-        }
-    });
-    
-    // Draw flows
-    flows.forEach(flow => {
-        const sourceElement = elements.find(e => e.id === flow.sourceRef);
-        const targetElement = elements.find(e => e.id === flow.targetRef);
-        
-        if (sourceElement && targetElement) {
-            const sourceX = sourceElement.x + sourceElement.width / 2;
-            const sourceY = sourceElement.y + sourceElement.height / 2;
-            const targetX = targetElement.x + targetElement.width / 2;
-            const targetY = targetElement.y + targetElement.height / 2;
-            
-            if (flow.waypoints && flow.waypoints.length > 0) {
-                // Use waypoints for curved path
-                let path = `(${sourceX}, ${sourceY})`;
-                flow.waypoints.forEach(wp => {
-                    path += ` -- (${wp.x}, ${wp.y})`;
-                });
-                path += ` -- (${targetX}, ${targetY})`;
-                latex += `\\draw[flow] ${path};
-`;
-            } else {
-                // Straight line
-                latex += `\\draw[flow] (${sourceX}, ${sourceY}) -- (${targetX}, ${targetY});
-`;
-            }
-        }
-    });
-    
-    latex += `
-\\end{tikzpicture}
-\\end{center}
+    latex += `\\end{tabular}
 
-\\section{Process Description}
+\\section{Process Details}
 
-This diagram represents the BPMN process with the following elements:
-
-\\begin{itemize}
-`;
-
-    // Add element descriptions
-    elements.forEach(element => {
-        if (element.name && element.name !== 'Start' && element.name !== 'End') {
-            latex += `\\item \\textbf{${element.name}}: ${getElementDescription(element.type)}
-`;
-        }
-    });
-    
-    latex += `\\end{itemize}
+\\begin{tabular}{|c|c|c|c|}
+\\hline
+\\textbf{Process Name} & \\textbf{Description} & \\textbf{Process Owner} & \\textbf{Process Manager} \\\\
+\\hline
+${metadata.processName || 'Not specified'} & ${metadata.description || 'No description available'} & ${metadata.processOwner || 'Not specified'} & ${metadata.processManager || 'Not specified'} \\\\
+\\hline
+\\end{tabular}
 
 \\end{document}`;
-    
     return latex;
-}
-
-function getElementDescription(type: string): string {
-    switch (type) {
-        case 'startEvent': return 'Start event of the process';
-        case 'endEvent': return 'End event of the process';
-        case 'task': return 'Task or activity in the process';
-        case 'gateway': return 'Decision point or gateway in the process';
-        default: return 'Process element';
-    }
 }
 
 function generateErrorLatex(fileName: string): string {
