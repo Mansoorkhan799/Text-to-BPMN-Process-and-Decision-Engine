@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '../../../lib/mongodb';
 import BpmnFileTree from '../../../models/BpmnFileTree';
 import BpmnFile from '../../../models/BpmnFile';
+import User from '../../../models/User';
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,24 +19,45 @@ export async function GET(req: NextRequest) {
     console.log(`Found ${files.length} BPMN files for user:`, userId);
     
     // Convert files to file tree structure (flat structure without folders)
-    const treeData = files.map(file => ({
-      id: file.fileId || file._id,
-      name: `${file.name}.bpmn`,
-      type: 'file' as const,
-      path: `${file.name}.bpmn`,
-      projectData: {
-        id: file.fileId || file._id,
-        name: file.name,
-        lastEdited: file.updatedAt?.toISOString() || new Date().toISOString(),
-        createdBy: file.userId,
-        role: userRole,
-        processMetadata: file.processMetadata || {
-          processName: '',
-          description: '',
-          processOwner: '',
-          processManager: '',
+    const treeData = await Promise.all(files.map(async file => {
+      // Get the createdBy value from advancedDetails, or fetch user info if not available
+      let createdByValue = file.userId; // Default to userId
+      
+      if (file.advancedDetails?.createdBy) {
+        // Use the createdBy value from advancedDetails if available
+        createdByValue = file.advancedDetails.createdBy;
+      } else {
+        // Fetch user's name from database as fallback
+        try {
+          const user = await User.findById(file.userId);
+          if (user) {
+            createdByValue = user.name || user.email || file.userId;
+          }
+        } catch (error) {
+          console.error('Error fetching user info:', error);
+          // Fallback to userId if user fetch fails
         }
       }
+      
+      return {
+        id: file.fileId || file._id,
+        name: `${file.name}.bpmn`,
+        type: 'file' as const,
+        path: `${file.name}.bpmn`,
+        projectData: {
+          id: file.fileId || file._id,
+          name: file.name,
+          lastEdited: file.updatedAt?.toISOString() || new Date().toISOString(),
+          createdBy: createdByValue,
+          role: userRole,
+          processMetadata: file.processMetadata || {
+            processName: '',
+            description: '',
+            processOwner: '',
+            processManager: '',
+          }
+        }
+      };
     }));
     
     console.log('Generated file tree from database files:', treeData.length, 'items');

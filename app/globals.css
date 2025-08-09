@@ -11,6 +11,53 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
+/* File Tree Drop Zone Styles */
+.file-tree .tree-node[data-type="folder"] {
+  position: relative;
+}
+
+.file-tree .tree-node[data-type="folder"]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(59, 130, 246, 0.05);
+  border: 2px dashed transparent;
+  border-radius: 4px;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.file-tree .tree-node[data-type="folder"]:hover::before {
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.file-tree .tree-node[data-type="file"] {
+  position: relative;
+}
+
+.file-tree .tree-node[data-type="file"]::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(156, 163, 175, 0.05);
+  border: 2px dashed transparent;
+  border-radius: 4px;
+  pointer-events: none;
+  transition: all 0.2s ease;
+}
+
+.file-tree .tree-node[data-type="file"]:hover::before {
+  border-color: rgba(156, 163, 175, 0.3);
+  background: rgba(156, 163, 175, 0.1);
+}
+
 .file-tree .tree-node {
   user-select: none;
 }
@@ -66,6 +113,34 @@
   background-position: -0.5px -0.5px;
 }
 
+/* Ensure BPMN canvas elements don't interfere with modals */
+.bjs-container .djs-palette,
+.bjs-container .djs-context-pad,
+.bjs-container .djs-popup,
+.bjs-container .djs-overlay-container {
+  z-index: 1000 !important;
+}
+
+/* Modal overlay should be above all BPMN elements */
+.modal-overlay {
+  z-index: 9999 !important;
+}
+
+.modal-content {
+  z-index: 10000 !important;
+}
+
+/* When modal is open, ensure BPMN elements stay behind */
+.modal-overlay ~ .bjs-container,
+.modal-overlay ~ .djs-container {
+  z-index: 1 !important;
+}
+
+.modal-overlay ~ .bjs-container *,
+.modal-overlay ~ .djs-container * {
+  z-index: 1 !important;
+}
+
 /* Create the dotted grid effect */
 .bjs-container::before {
   content: "";
@@ -80,4 +155,162 @@
   background-size: 20px 20px;
   background-position: 10px 10px;
   z-index: 0;
+}
+
+/* LaTeX Package Support Styles */
+.latex-page {
+  margin: 1in;
+  font-family: 'Times New Roman', serif;
+  line-height: 1.6;
+}
+
+/* List styles (enumitem package) */
+.latex-enumerate {
+  list-style-type: decimal;
+  margin-left: 2em;
+  margin-bottom: 1em;
+}
+
+.latex-itemize {
+  list-style-type: disc;
+  margin-left: 2em;
+  margin-bottom: 1em;
+}
+
+.latex-description {
+  margin-left: 2em;
+  margin-bottom: 1em;
+}
+
+.latex-description dt {
+  font-weight: bold;
+  margin-top: 0.5em;
+}
+
+.latex-description dd {
+  margin-left: 1em;
+  margin-bottom: 0.5em;
+}
+
+/* Header/Footer styles (fancyhdr package) */
+.latex-header-left,
+.latex-header-right,
+.latex-header-center {
+  position: fixed;
+  top: 0;
+  padding: 0.5em;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.latex-header-left {
+  left: 1em;
+}
+
+.latex-header-right {
+  right: 1em;
+}
+
+.latex-header-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.latex-footer-left,
+.latex-footer-right,
+.latex-footer-center {
+  position: fixed;
+  bottom: 0;
+  padding: 0.5em;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.latex-footer-left {
+  left: 1em;
+}
+
+.latex-footer-right {
+  right: 1em;
+}
+
+.latex-footer-center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+/* Link styles (hyperref package) */
+.latex-link {
+  color: #0066cc;
+  text-decoration: underline;
+}
+
+.latex-link:hover {
+  color: #003366;
+}
+
+.latex-url {
+  color: #0066cc;
+  font-family: monospace;
+  text-decoration: underline;
+}
+
+/* Image styles (graphicx package) */
+.latex-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1em auto;
+  border: 1px solid #ddd;
+}
+
+/* Math environment styles (amsmath package) */
+.latex-align,
+.latex-gather {
+  text-align: center;
+  margin: 1em 0;
+  padding: 0.5em;
+  background-color: #f9f9f9;
+  border-radius: 4px;
+}
+
+/* Section styles */
+.latex-section {
+  font-size: 1.5em;
+  font-weight: bold;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  color: #333;
+}
+
+.latex-subsection {
+  font-size: 1.3em;
+  font-weight: bold;
+  margin-top: 1.2em;
+  margin-bottom: 0.4em;
+  color: #444;
+}
+
+.latex-subsubsection {
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+  color: #555;
+}
+
+.latex-paragraph {
+  font-size: 1em;
+  font-weight: bold;
+  margin-top: 0.8em;
+  margin-bottom: 0.2em;
+  color: #666;
+}
+
+.latex-subparagraph {
+  font-size: 0.9em;
+  font-weight: bold;
+  margin-top: 0.6em;
+  margin-bottom: 0.2em;
+  color: #777;
 }

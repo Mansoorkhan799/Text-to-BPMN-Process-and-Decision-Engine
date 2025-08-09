@@ -13,6 +13,7 @@ import toast from 'react-hot-toast';
 import { User } from './types';
 import { RoleBasedUi, ROLES } from './utils/permissions';
 import dynamic from 'next/dynamic';
+import AdminFileManagement from './components/AdminFileManagement';
 
 // Import the BpmnEditor component dynamically to prevent SSR issues with browser APIs
 const BpmnEditor = dynamic(() => import('./components/BpmnEditor'), {
@@ -124,6 +125,11 @@ export default function Home() {
       return;
     }
 
+    if (view === 'admin-file-management' && user?.role !== 'admin') {
+      toast.error('You do not have permission to access this page');
+      return;
+    }
+
     // Redirect admin users trying to access notifications
     if (view === 'notifications' && user?.role === 'admin') {
       toast.error('Notifications are only available for users and supervisors');
@@ -222,6 +228,12 @@ export default function Home() {
           <main className="flex-1 w-full h-full overflow-hidden">
             <BpmnEditor user={user} />
           </main>
+        )}
+
+        {currentView === 'admin-file-management' && (
+          <div className="flex-1 overflow-hidden">
+            <AdminFileManagement userRole={user?.role} />
+          </div>
         )}
 
         {currentView === 'users' && (

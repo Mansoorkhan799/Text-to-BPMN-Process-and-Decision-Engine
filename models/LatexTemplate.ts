@@ -28,7 +28,7 @@ const LatexTemplateSchema = new mongoose.Schema<ILatexTemplate>({
   category: {
     type: String,
     required: true,
-    enum: ['Blank Document', 'Guidelines', 'Policy Process', 'Runbook Standard', 'Operating Procedure'],
+    enum: ['Blank Document', 'Guidelines', 'Process', 'Policy', 'Runbook', 'SOP'],
   },
   content: {
     type: String,

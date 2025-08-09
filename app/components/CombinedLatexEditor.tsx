@@ -262,7 +262,7 @@ This is a sample LaTeX document. You can edit it in the editor.
                     await updateLatexProjectInAPI(projectToSave);
                 } else {
                     // Save new project to database
-                    await saveLatexProjectToAPI(projectToSave, user.id, user.role);
+                    await saveLatexProjectToAPI(projectToSave, user.id, user.role, user.name || user.email || '');
                 }
                 // Also save to localStorage for backward compatibility
                 saveLatexProject(projectToSave, user.id, user.role);
@@ -714,6 +714,10 @@ This is a sample LaTeX document. You can edit it in the editor.
                             onSaveComplete={() => {
                                 console.log('Visual editor save completed');
                             }}
+                            // Template protection properties
+                            templateName={currentProject?.templateName}
+                            templateId={currentProject?.templateId}
+                            isTemplateProtected={currentProject?.isTemplateProtected}
                         />
                     </div>
                 )}

@@ -6,6 +6,10 @@ export interface LatexProject {
     preview?: string;
     createdBy?: string; // User ID of project creator
     role?: string;      // Role of the creator
+    // Template protection properties
+    templateName?: string;  // Name of the template used
+    templateId?: string;    // ID of the template used
+    isTemplateProtected?: boolean; // Whether this project has template protection enabled
 }
 
 const BASE_STORAGE_KEY = 'latex_projects';
@@ -170,11 +174,11 @@ export async function getLatexProjectByIdFromAPI(projectId: string): Promise<Lat
 /**
  * Async: Saves a LaTeX project to the database
  */
-export async function saveLatexProjectToAPI(project: LatexProject, userId?: string, role?: string): Promise<boolean> {
+export async function saveLatexProjectToAPI(project: LatexProject, userId?: string, role?: string, authorName?: string): Promise<boolean> {
     try {
         console.log('Saving project to API:', project.id);
 
-        const requestBody = {
+        const requestBody: any = {
             userId: userId || project.createdBy,
             name: project.name,
             type: 'tex',
@@ -182,7 +186,7 @@ export async function saveLatexProjectToAPI(project: LatexProject, userId?: stri
             fileId: project.id,
             documentMetadata: {
                 title: project.name,
-                author: '',
+                author: authorName || '',
                 description: '',
                 tags: [],
             }
@@ -215,16 +219,10 @@ export async function updateLatexProjectInAPI(project: LatexProject): Promise<bo
     try {
         console.log('Updating project in API:', project.id);
 
-        const requestBody = {
+        const requestBody: any = {
             fileId: project.id,
             content: project.content,
             name: project.name,
-            documentMetadata: {
-                title: project.name,
-                author: '',
-                description: '',
-                tags: [],
-            }
         };
 
         const res = await fetch('/api/latex', {

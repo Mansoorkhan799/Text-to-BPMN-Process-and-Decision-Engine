@@ -11,26 +11,38 @@ interface BpmnDiagramViewerProps {
 
 const BpmnDiagramViewer: React.FC<BpmnDiagramViewerProps> = ({ 
     xml, 
-    width = 400, 
-    height = 200, 
+    width, 
+    height, 
     className = '' 
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const viewerRef = useRef<any>(null);
+    const renderTokenRef = useRef<number>(0);
 
     useEffect(() => {
         if (!containerRef.current || !xml) return;
 
         const loadBpmnViewer = async () => {
+            // Bump render token to invalidate any in-flight previous async loads
+            const myToken = ++renderTokenRef.current;
             try {
+                // Clean previous render (avoid duplicate canvases in strict/dev)
+                if (viewerRef.current && typeof viewerRef.current.destroy === 'function') {
+                    try { viewerRef.current.destroy(); } catch {}
+                }
+                if (containerRef.current) {
+                    containerRef.current.innerHTML = '';
+                }
+
                 // Dynamically import BPMN.js
                 const { default: BpmnJS } = await import('bpmn-js');
                 
+                // If another effect ran since we started, abort
+                if (myToken !== renderTokenRef.current) return;
+
                 // Create viewer
                 const viewer = new BpmnJS({
-                    container: containerRef.current!,
-                    width: width,
-                    height: height
+                    container: containerRef.current!
                 });
                 
                 viewerRef.current = viewer;
@@ -60,6 +72,8 @@ const BpmnDiagramViewer: React.FC<BpmnDiagramViewerProps> = ({
 
         // Cleanup
         return () => {
+            // Invalidate any in-flight async work
+            renderTokenRef.current++;
             if (viewerRef.current && typeof viewerRef.current.destroy === 'function') {
                 viewerRef.current.destroy();
             }
@@ -70,7 +84,7 @@ const BpmnDiagramViewer: React.FC<BpmnDiagramViewerProps> = ({
         <div 
             ref={containerRef} 
             className={`bg-white border rounded ${className}`}
-            style={{ width: `${width}px`, height: `${height}px` }}
+            style={{ width: width ? `${width}px` : undefined, height: height ? `${height}px` : undefined }}
         />
     );
 };

@@ -68,4 +68,21 @@ export async function POST(request: NextRequest) {
     console.error('Error creating LaTeX template:', error);
     return NextResponse.json({ error: 'Failed to create template' }, { status: 500 });
   }
+}
+
+// DELETE: Clear all templates (for seeding)
+export async function DELETE(request: NextRequest) {
+  try {
+    await connectDB();
+    
+    await LatexTemplate.deleteMany({});
+    
+    return NextResponse.json({ 
+      success: true, 
+      message: 'All templates cleared successfully'
+    });
+  } catch (error) {
+    console.error('Error clearing LaTeX templates:', error);
+    return NextResponse.json({ error: 'Failed to clear templates' }, { status: 500 });
+  }
 } 

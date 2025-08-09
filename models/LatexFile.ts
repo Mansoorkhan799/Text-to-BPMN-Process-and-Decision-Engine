@@ -10,6 +10,10 @@ const latexFileSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  ownerUserId: {
+    type: String,
+    default: '',
+  },
   name: {
     type: String,
     required: true,
@@ -42,6 +46,10 @@ const latexFileSchema = new mongoose.Schema({
       default: [],
     },
   },
+  archived: {
+    type: Boolean,
+    default: false,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -51,6 +59,11 @@ const latexFileSchema = new mongoose.Schema({
     default: Date.now,
   },
 });
+
+// Useful indexes for admin listing
+latexFileSchema.index({ createdAt: -1 });
+latexFileSchema.index({ updatedAt: -1 });
+latexFileSchema.index({ name: 1 });
 
 const LatexFile = mongoose.models.LatexFile || mongoose.model('LatexFile', latexFileSchema);
 

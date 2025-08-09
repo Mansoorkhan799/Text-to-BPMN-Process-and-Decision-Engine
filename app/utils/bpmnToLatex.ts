@@ -42,7 +42,58 @@ interface ProcessMetadata {
     processManager: string;
 }
 
-export function convertBpmnToLatex(bpmnXml: string, fileName: string, processMetadata?: ProcessMetadata): string {
+interface AdvancedDetails {
+    versionNo: string;
+    processStatus: string;
+    classification: string;
+    dateOfCreation: string;
+    dateOfReview: string;
+    effectiveDate: string;
+    modificationDate: string;
+    modifiedBy: string;
+    changeDescription: string;
+    createdBy: string;
+}
+
+interface TableOptions {
+    processTable: boolean;
+    processDetailsTable: boolean;
+    signOffTable: boolean;
+    historyTable: boolean;
+    triggerTable: boolean;
+}
+
+interface SignOffData {
+    responsibility: string;
+    date: string;
+    name: string;
+    designation: string;
+    signature: string;
+}
+
+interface HistoryData {
+    versionNo: string;
+    date: string;
+    statusRemarks: string;
+    author: string;
+}
+
+interface TriggerData {
+    triggers: string;
+    inputs: string;
+    outputs: string;
+}
+
+export function convertBpmnToLatex(
+    bpmnXml: string, 
+    fileName: string, 
+    processMetadata?: ProcessMetadata,
+    tableOptions?: TableOptions,
+    signOffData?: SignOffData,
+    historyData?: HistoryData,
+    triggerData?: TriggerData,
+    advancedDetails?: AdvancedDetails
+): string {
     try {
         const parser = new XMLParser({
             ignoreAttributes: false,
@@ -185,8 +236,8 @@ export function convertBpmnToLatex(bpmnXml: string, fileName: string, processMet
             });
         }
         
-        // Generate LaTeX code with process table
-        return generateLatexCodeWithTable(elements, flows, lanes, fileName, processMetadata);
+        // Generate LaTeX code with table options
+        return generateLatexCodeWithTable(elements, flows, lanes, fileName, processMetadata, tableOptions, signOffData, historyData, triggerData, advancedDetails);
         
     } catch (error) {
         console.error('Error converting BPMN to LaTeX:', error);
@@ -336,7 +387,18 @@ function getProcessName(elements: BpmnElement[], lanes: BpmnLane[]): string {
     return 'Process Name';
 }
 
-function generateLatexCodeWithTable(elements: BpmnElement[], flows: BpmnFlow[], lanes: BpmnLane[], fileName: string, processMetadata?: ProcessMetadata): string {
+function generateLatexCodeWithTable(
+    elements: BpmnElement[], 
+    flows: BpmnFlow[], 
+    lanes: BpmnLane[], 
+    fileName: string, 
+    processMetadata?: ProcessMetadata,
+    tableOptions?: TableOptions,
+    signOffData?: SignOffData,
+    historyData?: HistoryData,
+    triggerData?: TriggerData,
+    advancedDetails?: AdvancedDetails
+): string {
     // Extract process table data
     const tableData = extractProcessTableData(elements, lanes);
     // Get the process name for the section heading
@@ -348,6 +410,15 @@ function generateLatexCodeWithTable(elements: BpmnElement[], flows: BpmnFlow[], 
         description: 'No description available',
         processOwner: 'Not specified',
         processManager: 'Not specified'
+    };
+    
+    // Default table options if not provided
+    const options = tableOptions || {
+        processTable: true,
+        processDetailsTable: true,
+        signOffTable: false,
+        historyTable: false,
+        triggerTable: false
     };
     
     let latex = `\\documentclass{article}
@@ -363,7 +434,11 @@ function generateLatexCodeWithTable(elements: BpmnElement[], flows: BpmnFlow[], 
 \\begin{document}
 
 \\maketitle
+`;
 
+    // Generate Process Table if selected
+    if (options.processTable) {
+        latex += `
 \\section{${processName} Table}
 
 \\begin{tabular}{|c|c|c|c|c|c|}
@@ -371,23 +446,90 @@ function generateLatexCodeWithTable(elements: BpmnElement[], flows: BpmnFlow[], 
 \\textbf{Step} & \\textbf{Process} & \\textbf{Task} & \\textbf{Procedure} & \\textbf{Tools/Refs} & \\textbf{Role} \\\\
 \\hline
 `;
-    tableData.forEach((row) => {
-        latex += `${row.stepSeq} & ${row.processName} & ${row.task} & ${row.procedure} & ${row.toolsReferences || '--'} & ${row.role} \\\\
+        tableData.forEach((row) => {
+            latex += `${row.stepSeq} & ${row.processName} & ${row.task} & ${row.procedure} & ${row.toolsReferences || '--'} & ${row.role} \\\\
 \\hline
 `;
-    });
-    latex += `\\end{tabular}
+        });
+        latex += `\\end{tabular}
+`;
+    }
 
+    // Generate Process Details Table if selected
+    if (options.processDetailsTable) {
+        latex += `
 \\section{Process Details}
+
+\\begin{tabular}{|l|l|}
+\\hline
+\\textbf{Process Name} & ${metadata.processName || 'Not specified'} \\\\
+\\hline
+\\textbf{Description} & ${metadata.description || 'No description available'} \\\\
+\\hline
+\\textbf{Process Owner} & ${metadata.processOwner || 'Not specified'} \\\\
+\\hline
+\\textbf{Process Manager} & ${metadata.processManager || 'Not specified'} \\\\
+\\hline
+\\textbf{Version No} & ${advancedDetails?.versionNo || 'Not specified'} \\\\
+\\hline
+\\textbf{Classification} & ${advancedDetails?.classification || 'Not specified'} \\\\
+\\hline
+\\textbf{Process Status} & ${advancedDetails?.processStatus || 'Not specified'} \\\\
+\\hline
+\\textbf{Effective Date} & ${advancedDetails?.effectiveDate || 'Not specified'} \\\\
+\\hline
+\\textbf{Review Date} & ${advancedDetails?.dateOfReview || 'Not specified'} \\\\
+\\hline
+\\end{tabular}
+`;
+    }
+
+    // Generate Sign OFF Table if selected
+    if (options.signOffTable && signOffData) {
+        latex += `
+\\section{Sign OFF Table}
+
+\\begin{tabular}{|c|c|c|c|c|}
+\\hline
+\\textbf{Responsibility} & \\textbf{Date} & \\textbf{Name} & \\textbf{Designation} & \\textbf{Signature} \\\\
+\\hline
+${signOffData.responsibility || '--'} & ${signOffData.date || '--'} & ${signOffData.name || '--'} & ${signOffData.designation || '--'} & ${signOffData.signature || '--'} \\\\
+\\hline
+\\end{tabular}
+`;
+    }
+
+    // Generate History Table if selected
+    if (options.historyTable && historyData) {
+        latex += `
+\\section{History Table}
 
 \\begin{tabular}{|c|c|c|c|}
 \\hline
-\\textbf{Process Name} & \\textbf{Description} & \\textbf{Process Owner} & \\textbf{Process Manager} \\\\
+\\textbf{Version No} & \\textbf{Date} & \\textbf{Status/Remarks} & \\textbf{Author} \\\\
 \\hline
-${metadata.processName || 'Not specified'} & ${metadata.description || 'No description available'} & ${metadata.processOwner || 'Not specified'} & ${metadata.processManager || 'Not specified'} \\\\
+${historyData.versionNo || '--'} & ${historyData.date || '--'} & ${historyData.statusRemarks || '--'} & ${historyData.author || '--'} \\\\
 \\hline
 \\end{tabular}
+`;
+    }
 
+    // Generate Trigger Table if selected
+    if (options.triggerTable && triggerData) {
+        latex += `
+\\section{Trigger Table}
+
+\\begin{tabular}{|c|c|c|}
+\\hline
+\\textbf{Triggers} & \\textbf{Inputs} & \\textbf{Outputs} \\\\
+\\hline
+${triggerData.triggers || '--'} & ${triggerData.inputs || '--'} & ${triggerData.outputs || '--'} \\\\
+\\hline
+\\end{tabular}
+`;
+    }
+
+    latex += `
 \\end{document}`;
     return latex;
 }

@@ -13,6 +13,37 @@ export interface BpmnProject {
         processOwner: string;
         processManager: string;
     };
+    // Add the three table data structures
+    signOffData?: {
+        responsibility: string;
+        date: string;
+        name: string;
+        designation: string;
+        signature: string;
+    };
+    historyData?: {
+        versionNo: string;
+        date: string;
+        statusRemarks: string;
+        author: string;
+    };
+    triggerData?: {
+        triggers: string;
+        inputs: string;
+        outputs: string;
+    };
+    advancedDetails?: {
+        versionNo: string;
+        processStatus: string;
+        classification: string;
+        dateOfCreation: string;
+        dateOfReview: string;
+        effectiveDate: string;
+        modificationDate: string;
+        modifiedBy: string;
+        changeDescription: string;
+        createdBy: string;
+    };
 }
 
 const BASE_STORAGE_KEY = 'bpmn_projects';
@@ -176,6 +207,24 @@ export async function getProjectByIdFromAPI(fileId: string): Promise<BpmnProject
         description: '',
         processOwner: '',
         processManager: '',
+      },
+      signOffData: data.signOffData || {
+        responsibility: '',
+        date: '',
+        name: '',
+        designation: '',
+        signature: ''
+      },
+      historyData: data.historyData || {
+        versionNo: '',
+        date: '',
+        statusRemarks: '',
+        author: ''
+      },
+      triggerData: data.triggerData || {
+        triggers: '',
+        inputs: '',
+        outputs: ''
       }
     };
     
@@ -198,21 +247,39 @@ export async function saveProjectToAPI(project: BpmnProject, userId?: string, ro
   try {
     console.log('Saving project to API:', { userId, name: project.name, fileId: project.id });
     
-    const res = await fetch('/api/bpmn', {
+    const res = await fetch('/api/bpmn-nodes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId,
+        type: 'file',
         name: project.name,
-        type: 'xml',
         content: project.xml,
-        fileId: project.id || undefined,
         processMetadata: project.processMetadata || {
           processName: '',
           description: '',
           processOwner: '',
           processManager: '',
-        }
+        },
+        signOffData: project.signOffData || {
+          responsibility: '',
+          date: '',
+          name: '',
+          designation: '',
+          signature: ''
+        },
+        historyData: project.historyData || {
+          versionNo: '',
+          date: '',
+          statusRemarks: '',
+          author: ''
+        },
+        triggerData: project.triggerData || {
+          triggers: '',
+          inputs: '',
+          outputs: ''
+        },
+        advancedDetails: project.advancedDetails
       })
     });
     

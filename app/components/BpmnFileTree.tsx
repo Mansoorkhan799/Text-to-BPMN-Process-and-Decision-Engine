@@ -19,7 +19,9 @@ import {
   HiDocumentAdd,
   HiFolderOpen,
   HiDocumentText,
-  HiCloudUpload
+  HiCloudUpload,
+  HiCheck,
+  HiX
 } from 'react-icons/hi';
 import { toast } from 'react-hot-toast';
 import { BpmnProject } from '../utils/projectStorage';
@@ -33,6 +35,7 @@ import {
   BpmnNode,
   CreateNodeRequest
 } from '../utils/bpmnNodeStorage';
+import { getCurrentDateTimeString, getUserDisplayName } from '../utils/versionUtils';
 import { v4 as uuidv4 } from 'uuid';
 
 interface User {
@@ -208,11 +211,78 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
     }
     
     try {
-      const completeProject = convertNodeToProject(node);
+      // Get the complete project data from the BPMN nodes API to ensure we have all table data
+      const response = await fetch(`/api/bpmn-nodes?nodeId=${node.id}&userId=${user?.id}`);
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.success && data.node) {
+          // Transform the API response to match our BpmnProject interface
+          const completeProject: BpmnProject = {
+            id: data.node.id,
+            name: data.node.name,
+            lastEdited: data.node.updatedAt || new Date().toISOString(),
+            content: data.node.content,
+            preview: data.node.preview,
+            createdBy: data.node.advancedDetails?.createdBy || data.node.userId,
+            role: user?.role,
+            processMetadata: data.node.processMetadata || {
+              processName: '',
+              description: '',
+              processOwner: '',
+              processManager: '',
+            },
+            signOffData: data.node.signOffData || {
+              responsibility: '',
+              date: '',
+              name: '',
+              designation: '',
+              signature: ''
+            },
+            historyData: data.node.historyData || {
+              versionNo: '',
+              date: '',
+              statusRemarks: '',
+              author: ''
+            },
+                        triggerData: data.node.triggerData || {
+                triggers: '',
+                inputs: '',
+                outputs: ''
+            },
+            advancedDetails: data.node.advancedDetails || {
+                versionNo: '1.0.0',
+                processStatus: '',
+                classification: '',
+                dateOfCreation: '',
+                dateOfReview: '',
+                effectiveDate: '',
+                modificationDate: '',
+                modifiedBy: '',
+                changeDescription: '',
+                createdBy: '',
+            }
+          };
+          
+          console.log('Loading complete project data from BPMN nodes API:', completeProject);
+          onProjectSelect(completeProject);
+        } else {
+          // Fallback to node data if API fails
+          console.warn('Failed to get complete project data, using node data');
+          const completeProject = convertNodeToProject(node);
+          onProjectSelect(completeProject);
+        }
+      } else {
+        // Fallback to node data if API fails
+        console.warn('Failed to get complete project data, using node data');
+        const completeProject = convertNodeToProject(node);
         onProjectSelect(completeProject);
+      }
     } catch (error) {
       console.error('Error loading project:', error);
-      toast.error('Failed to load project');
+      // Fallback to node data if API fails
+      const completeProject = convertNodeToProject(node);
+      onProjectSelect(completeProject);
     }
   };
 
@@ -259,6 +329,18 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
           description: '',
           processOwner: '',
           processManager: '',
+        },
+        advancedDetails: {
+          versionNo: '1.0.0',
+          processStatus: '',
+          classification: '',
+          dateOfCreation: getCurrentDateTimeString(), // Actual creation time
+          dateOfReview: '',
+          effectiveDate: '',
+          modificationDate: getCurrentDateTimeString(), // Initial modification time
+          modifiedBy: getUserDisplayName(user), // Initial modifier
+          changeDescription: 'Initial file creation',
+          createdBy: getUserDisplayName(user), // Actual creator
         },
       };
 
@@ -412,6 +494,18 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
           processOwner: '',
           processManager: '',
         },
+        advancedDetails: {
+          versionNo: '1.0.0',
+          processStatus: '',
+          classification: '',
+          dateOfCreation: getCurrentDateTimeString(), // Actual creation time
+          dateOfReview: '',
+          effectiveDate: '',
+          modificationDate: getCurrentDateTimeString(), // Initial modification time
+          modifiedBy: getUserDisplayName(user), // Initial modifier
+          changeDescription: 'Initial file creation',
+          createdBy: getUserDisplayName(user), // Actual creator
+        },
       };
 
       await createBpmnNode(request);
@@ -490,16 +584,33 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
           )}
           
           {isEditing ? (
-                  <input
-                    type="text"
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onKeyDown={handleKeyDown}
-                    onBlur={saveEdit}
-              className="flex-1 px-2 py-1 border border-gray-300 rounded text-sm"
-                    autoFocus
-                  />
-                ) : (
+            <div className="flex items-center gap-1 flex-1">
+              <input
+                type="text"
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                onKeyDown={(e) => { e.stopPropagation(); handleKeyDown(e); }}
+                onKeyPress={(e) => { e.stopPropagation(); }}
+                onKeyUp={(e) => { e.stopPropagation(); }}
+                className="flex-1 px-2 py-1 border border-blue-500 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+              <button
+                onClick={(e) => { e.stopPropagation(); saveEdit(); }}
+                className="p-1 rounded hover:bg-green-100"
+                title="Save"
+              >
+                <HiCheck className="w-4 h-4 text-green-600" />
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); cancelEdit(); }}
+                className="p-1 rounded hover:bg-red-100"
+                title="Cancel"
+              >
+                <HiX className="w-4 h-4 text-red-600" />
+              </button>
+            </div>
+          ) : (
             <span className="truncate text-sm">{node.data.name}</span>
           )}
         </div>

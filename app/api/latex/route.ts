@@ -72,11 +72,11 @@ export async function POST(req: NextRequest) {
       name, 
       type, 
       content,
-      documentMetadata: documentMetadata || {
-        title: '',
-        author: '',
-        description: '',
-        tags: [],
+      documentMetadata: {
+        title: name,
+        author: (documentMetadata && documentMetadata.author) ? documentMetadata.author : '',
+        description: (documentMetadata && documentMetadata.description) ? documentMetadata.description : '',
+        tags: (documentMetadata && documentMetadata.tags) ? documentMetadata.tags : [],
       }
     });
     

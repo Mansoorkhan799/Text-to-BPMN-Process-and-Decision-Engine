@@ -74,7 +74,7 @@ interface LatexEditorProps {
 }
 
 const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initialContentProp, onContentChange, editorMode = 'code', onEditorModeChange, isSaving, onManualSave, projectId, onSaveComplete }) => {
-    const initialContent = initialContentProp || `\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{graphicx}\n\\usepackage{hyperref}\n\n\\title{LaTeX Document}\n\\author{${user?.name || 'Author'}}\n\\date{\\today}\n\n\\begin{document}\n\n\\maketitle\n\n\\section{Introduction}\nThis is a sample LaTeX document. You can edit it in the editor.\n\n\\end{document}`;
+    const initialContent = initialContentProp || `\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{graphicx}\n\\usepackage{hyperref}\n\\usepackage{geometry}\n\\usepackage{enumitem}\n\\usepackage{fancyhdr}\n\n\\title{LaTeX Document}\n\\author{${user?.name || 'Author'}}\n\\date{\\today}\n\n\\begin{document}\n\n\\maketitle\n\n\\section{Introduction}\nThis is a sample LaTeX document. You can edit it in the editor.\n\n\\end{document}`;
 
     const [latexContent, setLatexContent] = useState<string>(initialContent);
 
@@ -262,6 +262,8 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
         return processedContent;
     };
 
+
+
     const compileLatex = () => {
         try {
             // Extract content between \begin{document} and \end{document}
@@ -284,6 +286,58 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
                 hasTitleSection = true;
                 processedContent = processedContent.replace('\\maketitle', '');
             }
+
+            // Process package-specific commands
+            processedContent = processedContent
+                // enumitem package - enhanced list formatting
+                .replace(/\\begin{enumerate}(\[.*?\])?/g, '<ol class="latex-enumerate">')
+                .replace(/\\end{enumerate}/g, '</ol>')
+                .replace(/\\begin{itemize}/g, '<ul class="latex-itemize">')
+                .replace(/\\end{itemize}/g, '</ul>')
+                .replace(/\\begin{description}/g, '<dl class="latex-description">')
+                .replace(/\\end{description}/g, '</dl>')
+                .replace(/\\item\[(.*?)\]/g, '<dt>$1</dt><dd>')
+                .replace(/\\item\s/g, '<li>')
+                
+                // fancyhdr package - header/footer commands (convert to CSS classes)
+                .replace(/\\pagestyle{fancy}/g, '')
+                .replace(/\\fancyhf{}/g, '')
+                .replace(/\\lhead{(.*?)}/g, '<div class="latex-header-left">$1</div>')
+                .replace(/\\rhead{(.*?)}/g, '<div class="latex-header-right">$1</div>')
+                .replace(/\\chead{(.*?)}/g, '<div class="latex-header-center">$1</div>')
+                .replace(/\\lfoot{(.*?)}/g, '<div class="latex-footer-left">$1</div>')
+                .replace(/\\rfoot{(.*?)}/g, '<div class="latex-footer-right">$1</div>')
+                .replace(/\\cfoot{(.*?)}/g, '<div class="latex-footer-center">$1</div>')
+                
+                // geometry package - page layout (convert to CSS)
+                .replace(/\\geometry{(.*?)}/g, (match, options) => {
+                    const marginMatch = options.match(/margin=([^,}]+)/);
+                    if (marginMatch) {
+                        return `<style>.latex-page { margin: ${marginMatch[1]}; }</style>`;
+                    }
+                    return '';
+                })
+                
+                // hyperref package - links
+                .replace(/\\href{(.*?)}{(.*?)}/g, '<a href="$1" class="latex-link">$2</a>')
+                .replace(/\\url{(.*?)}/g, '<a href="$1" class="latex-url">$1</a>')
+                
+                // graphicx package - images
+                .replace(/\\includegraphics(\[.*?\])?{(.*?)}/g, '<img src="$2" class="latex-image" alt="Image" />')
+                
+                // amsmath and amssymb packages - math commands (handled by KaTeX)
+                .replace(/\\begin{align}/g, '<div class="latex-align">')
+                .replace(/\\end{align}/g, '</div>')
+                .replace(/\\begin{align\*}/g, '<div class="latex-align">')
+                .replace(/\\end{align\*}/g, '</div>')
+                .replace(/\\begin{gather}/g, '<div class="latex-gather">')
+                .replace(/\\end{gather}/g, '</div>')
+                .replace(/\\begin{gather\*}/g, '<div class="latex-gather">')
+                .replace(/\\end{gather\*}/g, '</div>')
+                
+                // inputenc package - character encoding (already handled by browser)
+                .replace(/\\usepackage\[utf8\]{inputenc}/g, '')
+                .replace(/\\usepackage{inputenc}/g, '');
 
             // Process \input{} and \include{} commands BEFORE other processing
             processedContent = processInputIncludeCommands(processedContent);
@@ -1775,7 +1829,14 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
     // Function to insert LaTeX template
     const insertLatexTemplate = () => {
         const templateCode = `\\documentclass[12pt,a4paper]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage{amsmath}
+\\usepackage{amssymb}
+\\usepackage{graphicx}
 \\usepackage{hyperref}
+\\usepackage{geometry}
+\\usepackage{enumitem}
+\\usepackage{fancyhdr}
 \\usepackage{titlesec}
 
 % Formatting for sections and subsections
@@ -2021,10 +2082,14 @@ const LatexEditor: React.FC<LatexEditorProps> = ({ user, initialContent: initial
 
             // Create a complete LaTeX document with hyperref for links
             const fullLatex = `\\documentclass{article}
+\\usepackage[utf8]{inputenc}
 \\usepackage{amsmath}
 \\usepackage{amssymb}
 \\usepackage{graphicx}
 \\usepackage{hyperref}
+\\usepackage{geometry}
+\\usepackage{enumitem}
+\\usepackage{fancyhdr}
 
 \\title{${documentTitle}}
 \\author{Mansoor Khan}

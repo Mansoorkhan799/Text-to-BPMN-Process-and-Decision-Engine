@@ -20,7 +20,9 @@ import {
   HiDocumentAdd,
   HiFolderOpen,
   HiDocumentText,
-  HiCloudUpload
+  HiCloudUpload,
+  HiCheck,
+  HiX
 } from 'react-icons/hi';
 import { toast } from 'react-hot-toast';
 import { 
@@ -255,12 +257,21 @@ const LatexFileTree: React.FC<LatexFileTreeProps> = ({
       lastEdited: new Date().toISOString().split('T')[0],
       createdBy: user?.id,
       role: user?.role,
-      content: template.content
+      content: template.content,
+      // Add template information for protection feature
+      templateName: template.name,
+      templateId: template.id,
+      isTemplateProtected: template.name !== "Blank Page (Default)"
     };
 
     try {
-      // Save the project to database first
-      const success = await saveLatexProjectToAPI(newProject, user?.id, user?.role);
+      // Save the project to database first (include author name)
+      const success = await saveLatexProjectToAPI(
+        newProject,
+        user?.id,
+        user?.role,
+        user?.name || user?.email || ''
+      );
       if (!success) {
         toast.error('Failed to create LaTeX file');
         return;
@@ -275,7 +286,13 @@ const LatexFileTree: React.FC<LatexFileTreeProps> = ({
           type: 'file',
           name: newProject.name,
           parentId: pendingParentFolderId,
-          content: newProject.content
+          content: newProject.content,
+          documentMetadata: {
+            title: newProject.name,
+            author: user?.name || user?.email || '',
+            description: '',
+            tags: [],
+          }
         })
       });
 
@@ -1065,8 +1082,38 @@ ${latex}
   };
 
   // Handle drag and drop
+  // Function to check if a node can accept drops (only folders can)
+  const canAcceptDrop = (node: FileNode): boolean => {
+    return node.type === 'folder';
+  };
+
   const handleMove = async ({ dragIds, parentId, index }: { dragIds: string[]; parentId: string | null; index: number }) => {
     try {
+      // Validation: Check if trying to move files into another file
+      if (parentId !== null) {
+        // Find the parent node to check its type
+        const findParentNode = (nodes: FileNode[]): FileNode | null => {
+          for (const node of nodes) {
+            if (node.id === parentId) {
+              return node;
+            }
+            if (node.children) {
+              const found = findParentNode(node.children);
+              if (found) return found;
+            }
+          }
+          return null;
+        };
+
+        const parentNode = findParentNode(fileTree);
+        
+        // If parent is a file, prevent the move
+        if (parentNode && parentNode.type === 'file') {
+          toast.error('Files cannot be moved inside other files. Only folders can contain other items.');
+          return;
+        }
+      }
+
       // Update database first
       for (const dragId of dragIds) {
         const res = await fetch('/api/latex-nodes', {
@@ -1306,11 +1353,17 @@ ${latex}
                   <div
                     ref={dragHandle}
                     style={style}
-                    className={`flex items-center px-3 py-1 hover:bg-gray-100 cursor-pointer group ${
+                    data-type={node.data.type}
+                    className={`flex items-center px-3 py-1 hover:bg-gray-100 group tree-node ${
                       node.data.type === 'file' && node.data.projectData?.id === currentProjectId
                         ? 'bg-blue-50 border-r-2 border-blue-500'
                         : ''
+                    } ${
+                      node.data.type === 'file' 
+                        ? 'cursor-pointer' 
+                        : 'cursor-pointer'
                     }`}
+                    title={node.data.type === 'file' ? 'File - cannot contain other items' : 'Folder - can contain files and folders'}
                     onClick={() => {
                       if (node.data.type === 'folder') {
                         // Track expanded/collapsed state
@@ -1341,7 +1394,11 @@ ${latex}
                       </div>
                     )}
                     {/* File/Folder Icon */}
-                    <div className="mr-2 text-gray-500">
+                    <div className={`mr-2 ${
+                      node.data.type === 'folder' 
+                        ? 'text-blue-500' 
+                        : 'text-gray-500'
+                    }`}>
                       {node.data.type === 'folder' ? (
                         <HiFolder className="w-4 h-4" />
                       ) : (
@@ -1350,23 +1407,39 @@ ${latex}
                     </div>
                     {/* Name (editable if editing) */}
                     {editingNode === node.data.id ? (
-                      <input
-                        type="text"
-                        value={editingName}
-                        onChange={(e) => setEditingName(e.target.value)}
-                        onKeyDown={(e) => {
-                          e.stopPropagation();
-                          handleKeyDown(e);
-                        }}
-                        onKeyPress={(e) => {
-                          e.stopPropagation();
-                        }}
-                        onKeyUp={(e) => {
-                          e.stopPropagation();
-                        }}
-                        className="flex-1 text-sm bg-white border border-blue-500 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        autoFocus
-                      />
+                      <div className="flex items-center gap-1 flex-1">
+                        <input
+                          type="text"
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            e.stopPropagation();
+                            handleKeyDown(e);
+                          }}
+                          onKeyPress={(e) => {
+                            e.stopPropagation();
+                          }}
+                          onKeyUp={(e) => {
+                            e.stopPropagation();
+                          }}
+                          className="flex-1 text-sm bg-white border border-blue-500 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          autoFocus
+                        />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); saveEdit(); }}
+                          className="p-1 rounded hover:bg-green-100"
+                          title="Save"
+                        >
+                          <HiCheck className="w-4 h-4 text-green-600" />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); cancelEdit(); }}
+                          className="p-1 rounded hover:bg-red-100"
+                          title="Cancel"
+                        >
+                          <HiX className="w-4 h-4 text-red-600" />
+                        </button>
+                      </div>
                     ) : (
                       <span className="flex-1 text-sm text-gray-700 truncate">
                         {node.data.name}

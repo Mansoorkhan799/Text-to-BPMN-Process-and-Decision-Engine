@@ -77,6 +77,7 @@ type TableElement = {
     type: 'table';
     rows?: number;
     cols?: number;
+    colSpec?: string; // Store the original column specification
     children: TableRowElement[];
 };
 
@@ -137,78 +138,14 @@ interface VisualLatexEditorProps {
     projectId?: string;
     user?: { id: string; role: string; name?: string; email?: string };
     onSaveComplete?: () => void; // Callback when save completes
+    // Template protection properties
+    templateName?: string;
+    templateId?: string;
+    isTemplateProtected?: boolean;
 }
 
 // Custom Slate elements rendering
-const Element = (props: any) => {
-    const { attributes, children, element } = props;
-    switch (element.type) {
-        case 'heading-1':
-            return <h1 {...attributes} className="text-2xl font-bold mt-6 mb-4 text-white">{children}</h1>;
-        case 'heading-2':
-            return <h2 {...attributes} className="text-xl font-bold mt-5 mb-3 text-white">{children}</h2>;
-        case 'heading-3':
-            return <h3 {...attributes} className="text-lg font-bold mt-4 mb-2 text-white">{children}</h3>;
-        case 'heading-4':
-            return <h4 {...attributes} className="text-md font-bold mt-3 mb-2 text-white">{children}</h4>;
-        case 'heading-5':
-            return <h5 {...attributes} className="text-sm font-bold mt-2 mb-1 text-white">{children}</h5>;
-        case 'paragraph-specific':
-            return <p {...attributes} className="text-base font-semibold mt-3 mb-1 text-white">{children}</p>;
-        case 'subparagraph-specific':
-            return <p {...attributes} className="text-sm font-semibold mt-2 mb-1 text-white pl-4">{children}</p>;
-        case 'document-title':
-            return <h1 {...attributes} className="text-3xl font-bold text-center mt-8 mb-4 text-white">{children}</h1>;
-        case 'document-author':
-            return <p {...attributes} className="text-xl text-center mb-2 text-gray-300">{children}</p>;
-        case 'document-date':
-            return <p {...attributes} className="text-lg text-center mb-8 text-gray-300">{children}</p>;
-        case 'bullet-list':
-            return <ul {...attributes} className="list-disc ml-6 my-3 text-white">{children}</ul>;
-        case 'numbered-list':
-            return <ol {...attributes} className="list-decimal ml-6 my-3 text-white">{children}</ol>;
-        case 'list-item':
-            return <li {...attributes} className="text-white">{children}</li>;
-        case 'equation':
-            return (
-                <div {...attributes} contentEditable={false} className="py-2 text-center">
-                    <div
-                        className="latex-equation"
-                        dangerouslySetInnerHTML={{
-                            __html: katex.renderToString(element.formula || '', { throwOnError: false })
-                        }}
-                    />
-                    <span style={{ userSelect: 'none' }}>{children}</span>
-                </div>
-            );
-        case 'image':
-            return (
-                <div {...attributes} contentEditable={false} className="my-4">
-                    <div>
-                        <img
-                            src={element.url}
-                            className="max-w-full h-auto"
-                            alt={element.caption || "Image"}
-                        />
-                        <div className="text-sm text-center text-gray-300 mt-1">{element.caption || ''}</div>
-                    </div>
-                    <span style={{ userSelect: 'none' }}>{children}</span>
-                </div>
-            );
-        case 'table':
-            return (
-                <table {...attributes} className="border-collapse w-full my-4 text-white">
-                    <tbody>{children}</tbody>
-                </table>
-            );
-        case 'table-row':
-            return <tr {...attributes}>{children}</tr>;
-        case 'table-cell':
-            return <td {...attributes} className="border border-gray-600 px-4 py-2">{children}</td>;
-        default:
-            return <p {...attributes} className="my-2 text-white">{children}</p>;
-    }
-};
+// Placeholder for Element component - will be defined inside the main component
 
 // Custom Slate leaf rendering
 const Leaf = ({ attributes, children, leaf }: any) => {
@@ -497,599 +434,221 @@ const latexToSlate = (latexContent: string): Descendant[] => {
             };
         };
 
-        // Handle itemize environment (bullet lists)
-        const itemizeRegex = /\\begin\{itemize\}([\s\S]*?)\\end\{itemize\}/g;
-        let itemizeMatch;
 
-        while ((itemizeMatch = itemizeRegex.exec(contentToProcess)) !== null) {
-            const listContent = itemizeMatch[1];
-            const items = listContent.split('\\item').filter(item => item.trim());
 
-            const listItems = items.map(item => ({
-                type: 'list-item' as const,
-                children: [{ text: item.trim() }]
-            }));
 
-            elements.push({
-                type: 'bullet-list',
-                children: listItems
-            });
 
-            // Remove processed content to avoid duplicate processing
-            contentToProcess = contentToProcess.replace(itemizeMatch[0], '');
-        }
+                        // Simple sequential processing to maintain document order
+        let processedContent = contentToProcess;
 
-        // Handle enumerate environment (numbered lists)
-        const enumerateRegex = /\\begin\{enumerate\}([\s\S]*?)\\end\{enumerate\}/g;
-        let enumerateMatch;
-
-        while ((enumerateMatch = enumerateRegex.exec(contentToProcess)) !== null) {
-            const listContent = enumerateMatch[1];
-            const items = listContent.split('\\item').filter(item => item.trim());
-
-            const listItems = items.map(item => ({
-                type: 'list-item' as const,
-                children: [{ text: item.trim() }]
-            }));
-
-            elements.push({
-                type: 'numbered-list',
-                children: listItems
-            });
-
-            // Remove processed content to avoid duplicate processing
-            contentToProcess = contentToProcess.replace(enumerateMatch[0], '');
-        }
-
-        // Direct check for Introduction section and its content
-        const introSectionMatch = contentToProcess.match(/\\section\{Introduction\}([\s\S]*?)(?=\\section|\\end\{document\}|$)/);
-        if (introSectionMatch) {
-            // Add the Introduction heading
+        // Process content line by line to maintain order
+        const lines = processedContent.split('\n');
+        let i = 0;
+        
+        while (i < lines.length) {
+            const line = lines[i].trim();
+            
+            if (!line) {
+                i++;
+                continue;
+            }
+            
+            // Check for section commands
+            const sectionMatch = line.match(/^\\section\{([^}]*)\}$/);
+            if (sectionMatch) {
             elements.push({
                 type: 'heading-1',
-                children: [{ text: 'Introduction' }]
-            });
-
-            // Extract the content after the introduction heading
-            const introContent = introSectionMatch[1].trim();
-            if (introContent) {
-                // Split intro content into paragraphs
-                const introParagraphs = introContent.split(/\n\s*\n/);
-                introParagraphs.forEach(para => {
-                    if (para.trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(para.trim())
-                        });
-                    }
+                    children: [{ text: sectionMatch[1].trim() }]
                 });
-            }
-
-            // Remove this processed section to avoid duplicate processing
-            contentToProcess = contentToProcess.replace(introSectionMatch[0], '');
-        }
-
-        // Handle section commands with content after them
-        // This pattern captures both the section command and any text that follows it on the same line
-        const sectionContentRegex = /\\section\{([^}]*)\}(.*?)(?=\\|\n\s*\n|$)/g;
-        const subsectionContentRegex = /\\subsection\{([^}]*)\}(.*?)(?=\\|\n\s*\n|$)/g;
-        const subsubsectionContentRegex = /\\subsubsection\{([^}]*)\}(.*?)(?=\\|\n\s*\n|$)/g;
-        const paragraphContentRegex = /\\paragraph\{([^}]*)\}(.*?)(?=\\|\n\s*\n|$)/g;
-        const subparagraphContentRegex = /\\subparagraph\{([^}]*)\}(.*?)(?=\\|\n\s*\n|$)/g;
-
-        // Process sections with their following content
-        let contentWithProcessedSections = contentToProcess;
-
-        // Process sections first
-        let sectionMatch;
-        while ((sectionMatch = sectionContentRegex.exec(contentToProcess)) !== null) {
-            const sectionTitle = sectionMatch[1].trim();
-            const contentAfterSection = sectionMatch[2].trim();
-
-            // Skip if we've already processed the Introduction section
-            if (sectionTitle === 'Introduction' && elements.some(el =>
-                SlateElement.isElement(el) && el.type === 'heading-1' &&
-                el.children[0].text === 'Introduction')) {
+                i++;
                 continue;
             }
 
-            // Add the section heading
-            elements.push({
-                type: 'heading-1',
-                children: [{ text: sectionTitle }]
-            });
-
-            // If there's text content after the section heading on the same line, add it as a paragraph
-            if (contentAfterSection) {
-                elements.push({
-                    type: 'paragraph',
-                    children: processFormattedText(contentAfterSection)
-                });
-            }
-
-            // Remove this processed section from the content to avoid processing it again
-            contentWithProcessedSections = contentWithProcessedSections.replace(sectionMatch[0], '');
-        }
-
-        // Process subsections
-        let subsectionMatch;
-        while ((subsectionMatch = subsectionContentRegex.exec(contentToProcess)) !== null) {
-            const subsectionTitle = subsectionMatch[1].trim();
-            const contentAfterSubsection = subsectionMatch[2].trim();
-
-            // Add the subsection heading
+            // Check for subsection commands
+            const subsectionMatch = line.match(/^\\subsection\{([^}]*)\}$/);
+            if (subsectionMatch) {
             elements.push({
                 type: 'heading-2',
-                children: [{ text: subsectionTitle }]
-            });
-
-            // If there's text content after the subsection heading on the same line, add it as a paragraph
-            if (contentAfterSubsection) {
-                elements.push({
-                    type: 'paragraph',
-                    children: processFormattedText(contentAfterSubsection)
+                    children: [{ text: subsectionMatch[1].trim() }]
                 });
-            }
-
-            // Remove this processed subsection from the content
-            contentWithProcessedSections = contentWithProcessedSections.replace(subsectionMatch[0], '');
-        }
-
-        // Process subsubsections
-        let subsubsectionMatch;
-        while ((subsubsectionMatch = subsubsectionContentRegex.exec(contentToProcess)) !== null) {
-            const subsubsectionTitle = subsubsectionMatch[1].trim();
-            const contentAfterSubsubsection = subsubsectionMatch[2].trim();
-
-            // Add the subsubsection heading
-            elements.push({
-                type: 'heading-3',
-                children: [{ text: subsubsectionTitle }]
-            });
-
-            // If there's text content after the subsubsection heading on the same line, add it as a paragraph
-            if (contentAfterSubsubsection) {
-                elements.push({
-                    type: 'paragraph',
-                    children: processFormattedText(contentAfterSubsubsection)
-                });
-            }
-
-            // Remove this processed subsubsection from the content
-            contentWithProcessedSections = contentWithProcessedSections.replace(subsubsectionMatch[0], '');
-        }
-
-        // Process paragraph commands
-        let paragraphMatch;
-        while ((paragraphMatch = paragraphContentRegex.exec(contentToProcess)) !== null) {
-            const paragraphTitle = paragraphMatch[1].trim();
-            const contentAfterParagraph = paragraphMatch[2].trim();
-
-            // Add the paragraph heading
-            elements.push({
-                type: 'paragraph-specific',
-                children: [{ text: paragraphTitle }]
-            });
-
-            // If there's text content after the paragraph heading on the same line, add it as a normal paragraph
-            if (contentAfterParagraph) {
-                elements.push({
-                    type: 'paragraph',
-                    children: processFormattedText(contentAfterParagraph)
-                });
-            }
-
-            // Remove this processed paragraph from the content
-            contentWithProcessedSections = contentWithProcessedSections.replace(paragraphMatch[0], '');
-        }
-
-        // Process subparagraph commands
-        let subparagraphMatch;
-        while ((subparagraphMatch = subparagraphContentRegex.exec(contentToProcess)) !== null) {
-            const subparagraphTitle = subparagraphMatch[1].trim();
-            const contentAfterSubparagraph = subparagraphMatch[2].trim();
-
-            // Add the subparagraph heading
-            elements.push({
-                type: 'subparagraph-specific',
-                children: [{ text: subparagraphTitle }]
-            });
-
-            // If there's text content after the subparagraph heading on the same line, add it as a normal paragraph
-            if (contentAfterSubparagraph) {
-                elements.push({
-                    type: 'paragraph',
-                    children: processFormattedText(contentAfterSubparagraph)
-                });
-            }
-
-            // Remove this processed subparagraph from the content
-            contentWithProcessedSections = contentWithProcessedSections.replace(subparagraphMatch[0], '');
-        }
-
-        // Process tables first (before paragraphs)
-        const tableRegex = /\\begin\{table\}[\s\S]*?\\end\{table\}/g;
-        let tableMatch;
-        let lastIndex = 0;
-        const contentWithoutTables = contentWithProcessedSections;
-
-        while ((tableMatch = tableRegex.exec(contentWithProcessedSections)) !== null) {
-            const tableContent = tableMatch[0];
-            const tableStart = tableMatch.index;
-            const tableEnd = tableStart + tableContent.length;
-
-            // Process content before the table
-            const beforeTable = contentWithProcessedSections.substring(lastIndex, tableStart);
-            if (beforeTable.trim()) {
-                const beforeParagraphs = beforeTable
-                    .split(/\n\s*\n/)
-                    .map(p => p.trim())
-                    .filter(p => p.length > 0);
-                
-                beforeParagraphs.forEach(paragraph => {
-                    if (!paragraph.trim()) return;
-                    // Process as regular paragraph (existing logic will be added here)
-                    elements.push({
-                        type: 'paragraph',
-                        children: [{ text: paragraph }]
-                    });
-                });
-            }
-
-            // Parse the table
-            const tabularMatch = tableContent.match(/\\begin\{tabular\}\{([^}]*)\}([\s\S]*?)\\end\{tabular\}/);
-            if (tabularMatch) {
-                const colSpec = tabularMatch[1];
-                const tableBody = tabularMatch[2];
-                
-                // Count columns from column specification
-                const numCols = colSpec.replace(/[|]/g, '').length;
-                
-                // Parse table rows
-                const rows = tableBody.split('\\hline')
-                    .map(row => row.trim())
-                    .filter(row => row.length > 0);
-                
-                const tableRows: TableRowElement[] = [];
-                
-                rows.forEach(rowContent => {
-                    // Split by \\ to handle multiple rows between \hlines
-                    const rowParts = rowContent.split('\\\\').map(row => row.trim()).filter(row => row.length > 0);
-                    
-                    rowParts.forEach(rowPart => {
-                        const cells = rowPart.split('&').map(cell => cell.trim());
-                        const tableCells: TableCellElement[] = [];
-                        
-                        cells.forEach(cellContent => {
-                            tableCells.push({
-                                type: 'table-cell',
-                                children: [{ text: cellContent }]
-                            });
-                        });
-                        
-                        // Ensure we have the right number of cells
-                        while (tableCells.length < numCols) {
-                            tableCells.push({
-                                type: 'table-cell',
-                                children: [{ text: '' }]
-                            });
-                        }
-                        
-                        tableRows.push({
-                            type: 'table-row',
-                            children: tableCells
-                        });
-                    });
-                });
-                
-                // Create table element
-                elements.push({
-                    type: 'table',
-                    rows: tableRows.length,
-                    cols: numCols,
-                    children: tableRows
-                } as TableElement);
+                i++;
+                continue;
             }
             
-            lastIndex = tableEnd;
+            // Check for subsubsection commands
+            const subsubsectionMatch = line.match(/^\\subsubsection\{([^}]*)\}$/);
+            if (subsubsectionMatch) {
+            elements.push({
+                type: 'heading-3',
+                    children: [{ text: subsubsectionMatch[1].trim() }]
+                });
+                i++;
+                continue;
+            }
+            
+            // Check for itemize lists
+            if (line.includes('\\begin{itemize}')) {
+                const listItems: any[] = [];
+                i++; // Skip the begin line
+                
+                while (i < lines.length && !lines[i].includes('\\end{itemize}')) {
+                    const itemLine = lines[i].trim();
+                    if (itemLine.startsWith('\\item')) {
+                        const itemContent = itemLine.replace(/^\\item\s*/, '').trim();
+                        if (itemContent) {
+                            listItems.push({
+                                type: 'list-item' as const,
+                                children: processFormattedText(itemContent)
+                            });
+                        }
+                    }
+                    i++;
+                }
+                
+                if (listItems.length > 0) {
+                    elements.push({
+                        type: 'bullet-list',
+                        children: listItems
+                    });
+                }
+                i++; // Skip the end line
+                continue;
+            }
+            
+            // Check for enumerate lists
+            if (line.includes('\\begin{enumerate}')) {
+                const listItems: any[] = [];
+                i++; // Skip the begin line
+                
+                while (i < lines.length && !lines[i].includes('\\end{enumerate}')) {
+                    const itemLine = lines[i].trim();
+                    if (itemLine.startsWith('\\item')) {
+                        const itemContent = itemLine.replace(/^\\item\s*/, '').trim();
+                        if (itemContent) {
+                            listItems.push({
+                                type: 'list-item' as const,
+                                children: processFormattedText(itemContent)
+                            });
+                        }
+                    }
+                    i++;
+                }
+                
+                if (listItems.length > 0) {
+                    elements.push({
+                        type: 'numbered-list',
+                        children: listItems
+                    });
+                }
+                i++; // Skip the end line
+                continue;
+            }
+            
+            // Check for description lists
+            if (line.includes('\\begin{description}')) {
+                i++; // Skip the begin line
+                
+                while (i < lines.length && !lines[i].includes('\\end{description}')) {
+                    const itemLine = lines[i].trim();
+                    if (itemLine.startsWith('\\item')) {
+                        const itemContent = itemLine.replace(/^\\item\s*/, '').trim();
+                        if (itemContent) {
+                            const termMatch = itemContent.match(/^\[([^\]]*)\]\s*(.*)$/);
+                            if (termMatch) {
+                                const term = termMatch[1].trim();
+                                const definition = termMatch[2].trim();
+                                
+                    elements.push({
+                        type: 'paragraph-specific',
+                                    children: [{ text: term }]
+                    });
+
+                                if (definition) {
+                        elements.push({
+                            type: 'paragraph',
+                                        children: processFormattedText(definition)
+                                    });
+                                }
+                            } else {
+                        elements.push({
+                            type: 'paragraph',
+                                    children: processFormattedText(itemContent)
+                        });
+                    }
+                }
+                    }
+                    i++;
+                }
+                i++; // Skip the end line
+                continue;
+            }
+            
+            // Check for tabular tables
+            if (line.includes('\\begin{tabular}')) {
+                const tableRows: TableRowElement[] = [];
+                
+                // Extract column specification from the begin{tabular} line
+                const colSpecMatch = line.match(/\\begin{tabular}\{([^}]+)\}/);
+                const colSpec = colSpecMatch ? colSpecMatch[1] : '|c|';
+                
+                i++; // Skip the begin line
+                
+                while (i < lines.length && !lines[i].includes('\\end{tabular}')) {
+                    const tableLine = lines[i].trim();
+                    
+                    // Skip empty lines and hline commands
+                    if (tableLine && !tableLine.startsWith('\\hline')) {
+                        // Split the row by & and trim each cell
+                        const cells = tableLine.split('&').map(cell => cell.trim());
+                        const tableCells: TableCellElement[] = [];
+                        
+                        cells.forEach(cell => {
+                            // Remove trailing \\ if present
+                            const cleanCell = cell.replace(/\\\\$/, '').trim();
+                            // Always create a cell, even if empty
+                            tableCells.push({
+                                type: 'table-cell',
+                                children: cleanCell ? processFormattedText(cleanCell) : [{ text: '' }]
+                            });
+                        });
+                        
+                        if (tableCells.length > 0) {
+                            tableRows.push({
+                                type: 'table-row',
+                                children: tableCells
+                            });
+                        }
+                    }
+                    i++;
+                }
+                
+                if (tableRows.length > 0) {
+                    // Determine table dimensions
+                    const maxCols = Math.max(...tableRows.map(row => row.children.length));
+                    elements.push({
+                        type: 'table',
+                        rows: tableRows.length,
+                        cols: maxCols,
+                        colSpec: colSpec, // Store the original column specification
+                        children: tableRows
+                    });
+                }
+                i++; // Skip the end line
+                continue;
+            }
+            
+            // Regular paragraph content
+            if (line) {
+                elements.push({
+                    type: 'paragraph',
+                    children: processFormattedText(line)
+                });
+            }
+            
+            i++;
         }
 
-        // Process the remaining content (paragraphs, etc.) after handling sections and tables
-        const remainingContent = contentWithProcessedSections.substring(lastIndex);
-        const remainingParagraphs = remainingContent
-            .split(/\n\s*\n/)
-            .map(p => p.trim())
-            .filter(p => p.length > 0);
 
-        // Process each remaining paragraph
-        remainingParagraphs.forEach(paragraph => {
-            // Skip empty paragraphs
-            if (!paragraph.trim()) return;
-
-            // Direct handling of LaTeX commands
-            if (paragraph.includes('\\subsubsection{')) {
-                const match = paragraph.match(/\\subsubsection\{([^}]*)\}/);
-                if (match) {
-                    const title = match[1].trim();
-                    const content = paragraph.replace(match[0], '').trim();
-
-                    // Add as heading-3
-                    elements.push({
-                        type: 'heading-3',
-                        children: [{ text: title }]
-                    });
-
-                    // Add remaining content as paragraph if any
-                    if (content) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: [{ text: content }]
-                        });
-                    }
-                    return;
-                }
-            }
-
-            if (paragraph.includes('\\subsection{')) {
-                const match = paragraph.match(/\\subsection\{([^}]*)\}/);
-                if (match) {
-                    const title = match[1].trim();
-                    const content = paragraph.replace(match[0], '').trim();
-
-                    // Add as heading-2
-                    elements.push({
-                        type: 'heading-2',
-                        children: [{ text: title }]
-                    });
-
-                    // Add remaining content as paragraph if any
-                    if (content) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: [{ text: content }]
-                        });
-                    }
-                    return;
-                }
-            }
-
-            if (paragraph.includes('\\paragraph{')) {
-                const match = paragraph.match(/\\paragraph\{([^}]*)\}/);
-                if (match) {
-                    const title = match[1].trim();
-                    const content = paragraph.replace(match[0], '').trim();
-
-                    // Add as paragraph-specific
-                    elements.push({
-                        type: 'paragraph-specific',
-                        children: [{ text: title }]
-                    });
-
-                    // Add remaining content as paragraph if any
-                    if (content) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: [{ text: content }]
-                        });
-                    }
-                    return;
-                }
-            }
-
-            if (paragraph.includes('\\subparagraph{')) {
-                const match = paragraph.match(/\\subparagraph\{([^}]*)\}/);
-                if (match) {
-                    const title = match[1].trim();
-                    const content = paragraph.replace(match[0], '').trim();
-
-                    // Add as subparagraph-specific
-                    elements.push({
-                        type: 'subparagraph-specific',
-                        children: [{ text: title }]
-                    });
-
-                    // Add remaining content as paragraph if any
-                    if (content) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: [{ text: content }]
-                        });
-                    }
-                    return;
-                }
-            }
-
-            // First, check for LaTeX commands at the start of paragraphs
-
-            // Check for section commands
-            if (paragraph.match(/^\\section\{([^}]*)\}/)) {
-                const match = paragraph.match(/^\\section\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'heading-1',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                }
-                return;
-            }
-
-            // Check for subsection commands
-            if (paragraph.match(/^\\subsection\{([^}]*)\}/)) {
-                const match = paragraph.match(/^\\subsection\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'heading-2',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                }
-                return;
-            }
-
-            // Check for subsubsection commands
-            if (paragraph.match(/^\\subsubsection\{([^}]*)\}/)) {
-                const match = paragraph.match(/^\\subsubsection\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'heading-3',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                }
-                return;
-            }
-
-            // Check for paragraph commands
-            if (paragraph.match(/^\\paragraph\{([^}]*)\}/)) {
-                const match = paragraph.match(/^\\paragraph\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'paragraph-specific',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                }
-                return;
-            }
-
-            // Check for subparagraph commands
-            if (paragraph.match(/^\\subparagraph\{([^}]*)\}/)) {
-                const match = paragraph.match(/^\\subparagraph\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'subparagraph-specific',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                }
-                return;
-            }
-
-            // Check for inline LaTeX commands within the paragraph
-            if (paragraph.includes('\\subsubsection{')) {
-                const match = paragraph.match(/\\subsubsection\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'heading-3',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                    return;
-                }
-            }
-
-            if (paragraph.includes('\\subsection{')) {
-                const match = paragraph.match(/\\subsection\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'heading-2',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                    return;
-                }
-            }
-
-            if (paragraph.includes('\\paragraph{')) {
-                const match = paragraph.match(/\\paragraph\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'paragraph-specific',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                    return;
-                }
-            }
-
-            if (paragraph.includes('\\subparagraph{')) {
-                const match = paragraph.match(/\\subparagraph\{([^}]*)\}(.*?)$/);
-                if (match) {
-                    elements.push({
-                        type: 'subparagraph-specific',
-                        children: [{ text: match[1].trim() }]
-                    });
-
-                    if (match[2] && match[2].trim()) {
-                        elements.push({
-                            type: 'paragraph',
-                            children: processFormattedText(match[2].trim())
-                        });
-                    }
-                    return;
-                }
-            }
-
-            // Handle special case where the whole paragraph is a simple line with formatting
-            if (paragraph.match(/^\\textbf\{[^{}]*\}$/) || paragraph.match(/^\\textit\{[^{}]*\}$/) || paragraph.match(/^\\underline\{[^{}]*\}$/)) {
-                const formattedText = processFormattedText(paragraph);
-                elements.push({
-                    type: 'paragraph',
-                    children: formattedText
-                });
-            } else if (paragraph.includes('\\textbf{') || paragraph.includes('\\textit{') || paragraph.includes('\\underline{')) {
-                // Handle paragraphs with formatting mixed in
-                elements.push({
-                    type: 'paragraph',
-                    children: processFormattedText(paragraph)
-                });
-            } else {
-                // Handle plain text paragraphs
-                elements.push({
-                    type: 'paragraph',
-                    children: [{ text: paragraph }]
-                });
-            }
-        });
 
         // If no elements were created, provide default
         if (elements.length === 0) {
@@ -1264,25 +823,24 @@ const slateToLatex = (elements: Descendant[]): string => {
                 }
                 break;
             case 'table':
-                // Convert table to LaTeX tabular environment
-                body += '\\begin{table}[h!]\n  \\centering\n';
-                
-                // Determine number of columns from the first row
-                const firstRow = element.children?.[0];
-                const numCols = firstRow?.children?.length || 3;
-                
-                // Create column specification
-                let colSpec = '|';
-                for (let i = 0; i < numCols; i++) {
-                    colSpec += 'c|';
+                // Convert table to LaTeX tabular environment (inline, not floating)
+                // Use stored column specification if available, otherwise determine from content
+                let colSpec = element.colSpec;
+                if (!colSpec) {
+                    const firstRow = element.children?.[0];
+                    const numCols = firstRow?.children?.length || 3;
+                    // Create column specification - use |c| for centered columns with borders
+                    colSpec = '|';
+                    for (let i = 0; i < numCols; i++) {
+                        colSpec += 'c|';
+                    }
                 }
                 
-                body += `  \\begin{tabular}{${colSpec}}\n    \\hline\n`;
+                body += `\\begin{tabular}{${colSpec}}\n\\hline\n`;
                 
                 // Process each row
                 element.children?.forEach((row: any, rowIndex: number) => {
                     if (row.type === 'table-row') {
-                        body += '    ';
                         row.children?.forEach((cell: any, cellIndex: number) => {
                             if (cell.type === 'table-cell') {
                                 const cellContent = childrenToLatex(cell.children);
@@ -1292,14 +850,11 @@ const slateToLatex = (elements: Descendant[]): string => {
                                 }
                             }
                         });
-                        body += ' \\\\\n    \\hline\n';
+                        body += ' \\\\\n\\hline\n';
                     }
                 });
                 
-                body += '  \\end{tabular}\n';
-                body += '  \\caption{Table Caption}\n';
-                body += '  \\label{tab:my_table}\n';
-                body += '\\end{table}\n\n';
+                body += '\\end{tabular}\n\n';
                 break;
             default:
                 // Handle other element types if needed
@@ -1313,12 +868,149 @@ const slateToLatex = (elements: Descendant[]): string => {
     return latex;
 };
 
-const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, onEditorModeChange, isSaving, onManualSave, projectId, user, onSaveComplete }: VisualLatexEditorProps = {}) => {
+const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, onEditorModeChange, isSaving, onManualSave, projectId, user, onSaveComplete, templateName, templateId, isTemplateProtected }: VisualLatexEditorProps = {}) => {
     // Key for forcing Slate editor re-render - declare first
     const [editorKey, setEditorKey] = useState<number>(0);
     
+    // Template protection helper functions - define these BEFORE editor creation
+    const isProtectedElement = useCallback((element: any): boolean => {
+        if (!isTemplateProtected) return false;
+        
+        // Check if element is a heading that should be protected
+        return element.type === 'heading-1' || 
+               element.type === 'heading-2' || 
+               element.type === 'heading-3' || 
+               element.type === 'heading-4' || 
+               element.type === 'heading-5';
+    }, [isTemplateProtected]);
+
+    const showProtectionMessage = useCallback((message: string) => {
+        setProtectionMessage(message);
+        setShowTemplateProtectionMessage(true);
+        setTimeout(() => setShowTemplateProtectionMessage(false), 3000);
+    }, []);
+
+    const handleProtectedElementClick = useCallback(() => {
+        showProtectionMessage("This is a template section and cannot be changed");
+        jumpToNextEditable();
+    }, [showProtectionMessage]);
+    
     // Create a Slate editor that is memorized - recreate when key changes to reset all state
-    const editor = useMemo(() => withHistory(withReact(createEditor())), [editorKey]);
+    const editor = useMemo(() => {
+        const baseEditor = withHistory(withReact(createEditor()));
+        
+        // Add template protection normalization
+        const { normalizeNode } = baseEditor;
+        baseEditor.normalizeNode = ([node, path]) => {
+            // Check if this is a protected element that was modified
+            if (isTemplateProtected && node && typeof node === 'object' && 'type' in node) {
+                const element = node as any;
+                if (isProtectedElement(element)) {
+                    // Prevent any changes to protected elements
+                    // This will be handled by the renderElement function
+                    return;
+                }
+            }
+            
+            // Call the original normalizeNode
+            normalizeNode([node, path]);
+        };
+        
+        return baseEditor;
+    }, [editorKey, isTemplateProtected, isProtectedElement]);
+
+    // Update jumpToNextEditable with proper implementation now that editor exists
+    const jumpToNextEditable = useCallback(() => {
+        if (!editor) return;
+        
+        try {
+            // Ensure editor has valid content
+            if (!editor.children || editor.children.length === 0) {
+                console.log('Editor has no content, cannot navigate');
+                return;
+            }
+            
+            const { selection } = editor;
+            if (!selection) return;
+
+            // Find the current protected element
+            const matches = Array.from(Editor.nodes(editor, {
+                match: (n) => {
+                    // Type guard to ensure n is an element
+                    if (!SlateElement.isElement(n)) return false;
+                    return isProtectedElement(n);
+                },
+            }));
+            const match = matches[0];
+
+            if (!match) return;
+
+            const [, path] = match;
+
+            // Find the next non-protected element
+            const next = Editor.next(editor, {
+                at: path,
+                match: (n) => {
+                    // Type guard to ensure n is an element
+                    if (!SlateElement.isElement(n)) return false;
+                    return !isProtectedElement(n);
+                },
+            });
+
+            if (next) {
+                const [, nextPath] = next;
+                
+                // Validate that the next path exists and has content
+                try {
+                    if (Editor.hasPath(editor, nextPath)) {
+                        // Try to get the start point safely
+                        const startPoint = Editor.start(editor, nextPath);
+                        if (startPoint) {
+                            Transforms.select(editor, startPoint);
+                            ReactEditor.focus(editor);
+                        }
+                    }
+                } catch (nodeError) {
+                    console.log('Could not navigate to next node, trying alternative approach');
+                    // Fallback: try to select the first editable element
+                    try {
+                        const firstEditable = Array.from(Editor.nodes(editor, {
+                            match: (n) => {
+                                // Type guard to ensure n is an element
+                                if (!SlateElement.isElement(n)) return false;
+                                return !isProtectedElement(n) && Editor.isBlock(editor, n);
+                            },
+                        }))[0];
+                        
+                        if (firstEditable) {
+                            const [, firstPath] = firstEditable;
+                            const startPoint = Editor.start(editor, firstPath);
+                            if (startPoint) {
+                                Transforms.select(editor, startPoint);
+                                ReactEditor.focus(editor);
+                            }
+                        }
+                    } catch (fallbackError) {
+                        console.log('Fallback navigation also failed, keeping current selection');
+                        // Final fallback: just focus the editor
+                        try {
+                            ReactEditor.focus(editor);
+                        } catch (focusError) {
+                            console.log('Could not focus editor');
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            console.error('Error jumping to next editable:', error);
+            // Final fallback: just focus the editor
+            try {
+                ReactEditor.focus(editor);
+            } catch (focusError) {
+                console.log('Could not focus editor');
+            }
+        }
+    }, [editor, isProtectedElement]);
 
     // Process initialLatexContent if provided
     const initialValue: Descendant[] = useMemo(() => {
@@ -1403,6 +1095,122 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     // Table grid picker popup state
     const [showTableGrid, setShowTableGrid] = useState(false);
     const [tableGridPosition, setTableGridPosition] = useState<{ top: number; left: number } | null>(null);
+
+    // Template protection state
+    const [showTemplateProtectionMessage, setShowTemplateProtectionMessage] = useState(false);
+    const [protectionMessage, setProtectionMessage] = useState('');
+
+    // Custom Slate elements rendering with template protection
+    const Element = useCallback((props: any) => {
+        const { attributes, children, element } = props;
+        
+        // Check if this element should be protected
+        const isProtected = isProtectedElement(element);
+        
+        // If protected, render with protection styling and click handler
+        if (isProtected) {
+            const baseProps = {
+                ...attributes,
+                contentEditable: false,
+                onClick: handleProtectedElementClick,
+                style: { 
+                    backgroundColor: "#f0f0f0", 
+                    fontWeight: "bold", 
+                    cursor: "not-allowed",
+                    border: "1px solid #ccc",
+                    borderRadius: "4px",
+                    padding: "4px 8px",
+                    margin: "2px 0",
+                    position: "relative"
+                }
+            };
+
+            switch (element.type) {
+                case 'heading-1':
+                    return <h1 {...baseProps} className="text-2xl font-bold mt-6 mb-4 text-gray-700">{children}</h1>;
+                case 'heading-2':
+                    return <h2 {...baseProps} className="text-xl font-bold mt-5 mb-3 text-gray-700">{children}</h2>;
+                case 'heading-3':
+                    return <h3 {...baseProps} className="text-lg font-bold mt-4 mb-2 text-gray-700">{children}</h3>;
+                case 'heading-4':
+                    return <h4 {...baseProps} className="text-md font-bold mt-3 mb-2 text-gray-700">{children}</h4>;
+                case 'heading-5':
+                    return <h5 {...baseProps} className="text-sm font-bold mt-2 mb-1 text-gray-700">{children}</h5>;
+                default:
+                    return <div {...baseProps} className="text-white">{children}</div>;
+            }
+        }
+        
+        // Regular element rendering for non-protected elements
+        switch (element.type) {
+            case 'heading-1':
+                return <h1 {...attributes} className="text-2xl font-bold mt-6 mb-4 text-white">{children}</h1>;
+            case 'heading-2':
+                return <h2 {...attributes} className="text-xl font-bold mt-5 mb-3 text-white">{children}</h2>;
+            case 'heading-3':
+                return <h3 {...attributes} className="text-lg font-bold mt-4 mb-2 text-white">{children}</h3>;
+            case 'heading-4':
+                return <h4 {...attributes} className="text-md font-bold mt-3 mb-2 text-white">{children}</h4>;
+            case 'heading-5':
+                return <h5 {...attributes} className="text-sm font-bold mt-2 mb-1 text-white">{children}</h5>;
+            case 'paragraph-specific':
+                return <p {...attributes} className="text-base font-semibold mt-3 mb-1 text-white">{children}</p>;
+            case 'subparagraph-specific':
+                return <p {...attributes} className="text-sm font-semibold mt-2 mb-1 text-white pl-4">{children}</p>;
+            case 'document-title':
+                return <h1 {...attributes} className="text-3xl font-bold text-center mt-8 mb-4 text-white">{children}</h1>;
+            case 'document-author':
+                return <p {...attributes} className="text-xl text-center mb-2 text-gray-300">{children}</p>;
+            case 'document-date':
+                return <p {...attributes} className="text-lg text-center mb-8 text-gray-300">{children}</p>;
+            case 'bullet-list':
+                return <ul {...attributes} className="list-disc ml-6 my-3 text-white">{children}</ul>;
+            case 'numbered-list':
+                return <ol {...attributes} className="list-decimal ml-6 my-3 text-white">{children}</ol>;
+            case 'list-item':
+                return <li {...attributes} className="text-white">{children}</li>;
+            case 'equation':
+                return (
+                    <div {...attributes} contentEditable={false} className="py-2 text-center">
+                        <div
+                            className="latex-equation"
+                            dangerouslySetInnerHTML={{
+                                __html: katex.renderToString(element.formula || '', { throwOnError: false })
+                            }}
+                        />
+                        <span style={{ userSelect: 'none' }}>{children}</span>
+                    </div>
+                );
+            case 'image':
+                return (
+                    <div {...attributes} contentEditable={false} className="my-4">
+                        <div>
+                            <img
+                                src={element.url}
+                                className="max-w-full h-auto"
+                                alt={element.caption || "Image"}
+                            />
+                            <div className="text-sm text-center text-gray-300 mt-1">{element.caption || ''}</div>
+                        </div>
+                        <span style={{ userSelect: 'none' }}>{children}</span>
+                    </div>
+                );
+            case 'table':
+                return (
+                    <div {...attributes} className="my-4 overflow-x-auto">
+                        <table className="border-collapse w-full text-white border border-gray-600 bg-gray-800">
+                            <tbody>{children}</tbody>
+                        </table>
+                    </div>
+                );
+            case 'table-row':
+                return <tr {...attributes} className="border-b border-gray-600 hover:bg-gray-700">{children}</tr>;
+            case 'table-cell':
+                return <td {...attributes} className="border border-gray-600 px-3 py-2 text-sm align-top">{children}</td>;
+            default:
+                return <p {...attributes} className="my-2 text-white">{children}</p>;
+        }
+    }, [isProtectedElement, handleProtectedElementClick]);
 
     // Reset editor selection when key changes (after revert)
     useEffect(() => {
@@ -2713,6 +2521,22 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     </div>
                 )}
             </div>
+
+            {/* Template Protection Message */}
+            {showTemplateProtectionMessage && (
+                <div className="fixed top-4 right-4 z-50 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded shadow-lg max-w-sm">
+                    <div className="flex items-center">
+                        <div className="flex-shrink-0">
+                            <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                        </div>
+                        <div className="ml-3">
+                            <p className="text-sm font-medium">{protectionMessage}</p>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <style jsx global>{`
                 .latex-preview {

@@ -2,9 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { IconType } from 'react-icons';
-import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp, HiBell } from 'react-icons/hi';
+import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp, HiBell, HiOutlineFolderOpen } from 'react-icons/hi';
 import { SiLatex } from 'react-icons/si';
-import { FaCode } from 'react-icons/fa';
 import { useState, useEffect } from 'react';
 import { ROLES } from '../utils/permissions';
 
@@ -125,6 +124,15 @@ const SideMenu: React.FC<SideMenuProps> = ({
       onClick: () => onNavigate('latex'),
       view: 'latex',
       requiredRole: ROLES.USER // Everyone can access
+    },
+    // Admin-only: File Management (combines BPMN + LaTeX)
+    {
+      label: 'File Management',
+      icon: <HiOutlineFolderOpen className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+      onClick: () => onNavigate('admin-file-management'),
+      view: 'admin-file-management',
+      requiredRole: ROLES.ADMIN,
+      shouldShow: userRole === ROLES.ADMIN,
     },
     {
       label: 'Notifications',

@@ -191,7 +191,7 @@ const BpmnFilesList: React.FC<BpmnFilesListProps> = ({ user }) => {
                       </div>
                       <div className="flex items-center space-x-1">
                         <HiUser className="h-4 w-4" />
-                        <span>{user?.name || user?.email || 'Unknown'}</span>
+                        <span>{file.projectData?.createdBy || user?.name || user?.email || 'Unknown'}</span>
                       </div>
                     </div>
                     {/* Process metadata if available */}

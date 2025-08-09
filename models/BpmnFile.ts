@@ -42,6 +42,103 @@ const bpmnFileSchema = new mongoose.Schema({
       default: '',
     },
   },
+  advancedDetails: {
+    versionNo: {
+      type: String,
+      default: '1.0.0',
+    },
+    processStatus: {
+      type: String,
+      default: '',
+    },
+    classification: {
+      type: String,
+      default: '',
+    },
+    dateOfCreation: {
+      type: String,
+      default: '',
+    },
+    dateOfReview: {
+      type: String,
+      default: '',
+    },
+    effectiveDate: {
+      type: String,
+      default: '',
+    },
+    modificationDate: {
+      type: String,
+      default: '',
+    },
+    modifiedBy: {
+      type: String,
+      default: '',
+    },
+    changeDescription: {
+      type: String,
+      default: '',
+    },
+    createdBy: {
+      type: String,
+      default: '',
+    },
+  },
+  // Add the three table data structures
+  signOffData: {
+    responsibility: {
+      type: String,
+      default: '',
+    },
+    date: {
+      type: String,
+      default: '',
+    },
+    name: {
+      type: String,
+      default: '',
+    },
+    designation: {
+      type: String,
+      default: '',
+    },
+    signature: {
+      type: String,
+      default: '',
+    },
+  },
+  historyData: {
+    versionNo: {
+      type: String,
+      default: '',
+    },
+    date: {
+      type: String,
+      default: '',
+    },
+    statusRemarks: {
+      type: String,
+      default: '',
+    },
+    author: {
+      type: String,
+      default: '',
+    },
+  },
+  triggerData: {
+    triggers: {
+      type: String,
+      default: '',
+    },
+    inputs: {
+      type: String,
+      default: '',
+    },
+    outputs: {
+      type: String,
+      default: '',
+    },
+  },
   createdAt: {
     type: Date,
     default: Date.now,

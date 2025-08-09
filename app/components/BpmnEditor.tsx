@@ -27,6 +27,7 @@ const BpmnFileTree = dynamic(() => import('./BpmnFileTree'), { ssr: false });
 import { convertBpmnToLatex } from '../utils/bpmnToLatex';
 import { saveLatexProject, saveLatexProjectToAPI, LatexProject } from '../utils/latexProjectStorage';
 import { getLatexFileTree, saveLatexFileTree, saveLatexFileTreeToAPI, FileTreeNode } from '../utils/fileTreeStorage';
+import { autoIncrementVersion, getCurrentDateString, getCurrentDateTimeString, createChangeDescription, getUserDisplayName, createInitialAdvancedDetails, formatDateForDisplay, formatDateOnlyForDisplay } from '../utils/versionUtils';
 
 // Add custom CSS for grid background
 const gridStyles = `
@@ -198,6 +199,88 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
         processOwner: '',
         processManager: '',
     });
+
+    // Add state for additional details
+    const [additionalDetails, setAdditionalDetails] = useState({
+        versionNo: '1.0.0',
+        processStatus: '',
+        classification: '',
+        dateOfCreation: '', // Will be populated when file is created
+        dateOfReview: '',
+        effectiveDate: '',
+        modificationDate: '', // Will be populated when file is created
+        modifiedBy: '', // Will be populated when file is created
+        changeDescription: '',
+        createdBy: '', // Will be populated when file is created
+    });
+
+    // Add backup state for additional details (for cancel functionality)
+    const [additionalDetailsBackup, setAdditionalDetailsBackup] = useState({
+        versionNo: '1.0.0',
+        processStatus: '',
+        classification: '',
+        dateOfCreation: '', // Will be populated when file is created
+        dateOfReview: '',
+        effectiveDate: '',
+        modificationDate: '', // Will be populated when file is created
+        modifiedBy: '', // Will be populated when file is created
+        changeDescription: '',
+        createdBy: '', // Will be populated when file is created
+    });
+
+    // Add state for editing additional details
+    const [isEditingAdditionalDetails, setIsEditingAdditionalDetails] = useState(false);
+
+    // Add state for LaTeX generation popup
+    const [showLatexPopup, setShowLatexPopup] = useState(false);
+    const [latexTableOptions, setLatexTableOptions] = useState({
+        processTable: true,
+        processDetailsTable: true,
+        signOffTable: true,
+        historyTable: true,
+        triggerTable: true
+    });
+    const [selectedLeftOption, setSelectedLeftOption] = useState('tables'); // 'tables', 'signoff', 'history', 'trigger'
+    const [signOffData, setSignOffData] = useState({
+        responsibility: '',
+        date: '',
+        name: '',
+        designation: '',
+        signature: ''
+    });
+    const [historyData, setHistoryData] = useState({
+        versionNo: '',
+        date: '',
+        statusRemarks: '',
+        author: ''
+    });
+    const [triggerData, setTriggerData] = useState({
+        triggers: '',
+        inputs: '',
+        outputs: ''
+    });
+
+    // Check if any table is selected for LaTeX generation
+    const isAnyTableSelected = Object.values(latexTableOptions).some(option => option);
+
+    // Function to update version number and modification details
+    const updateVersionAndModificationDetails = (changeType: 'diagram' | 'process' | 'advanced' | 'tables', additionalInfo?: string) => {
+        const newVersion = autoIncrementVersion(additionalDetails.versionNo, changeType);
+        const currentDateTime = getCurrentDateTimeString(); // Use full date and time
+        const changeDesc = createChangeDescription(changeType, additionalInfo);
+        const userName = getUserDisplayName(user);
+        
+        setAdditionalDetails(prev => ({
+            ...prev,
+            versionNo: newVersion,
+            modificationDate: currentDateTime, // Actual modification time
+            modifiedBy: userName, // Actual modifier
+            changeDescription: changeDesc
+        }));
+        
+        console.log(`Version updated to ${newVersion} due to ${changeType} change by ${userName}`);
+        return newVersion;
+    };
 
     // Fetch current user on component mount if not provided as prop
     useEffect(() => {
@@ -582,12 +665,23 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                 // Create a new file for untitled diagrams
                 const newProjectName = projectName === 'Untitled Diagram' ? 'Untitled' : projectName;
                 
+                // Populate creation information with actual values when file is created
+                const creationAdvancedDetails = {
+                    ...additionalDetails,
+                    dateOfCreation: getCurrentDateTimeString(), // Actual creation time
+                    createdBy: getUserDisplayName(user), // Actual creator
+                    modificationDate: getCurrentDateTimeString(), // Initial modification time
+                    modifiedBy: getUserDisplayName(user), // Initial modifier
+                    changeDescription: 'Initial file creation'
+                };
+                
                 const request: CreateNodeRequest = {
                     userId: user.id,
                     type: 'file',
                     name: newProjectName,
                     content: xml,
                     processMetadata: currentMetadata,
+                    advancedDetails: creationAdvancedDetails,
                 };
 
                 console.log('Creating new file:', request);
@@ -616,12 +710,16 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                 // Update existing file
                 console.log('Updating existing file with ID:', projectId);
                 
+                // Update version for diagram change
+                updateVersionAndModificationDetails('diagram', `Diagram elements modified in ${projectName}`);
+                
                 await updateBpmnNode({
                     nodeId: projectId!,
                     userId: user.id,
                     name: projectName,
                     content: xml,
                     processMetadata: currentMetadata,
+                    advancedDetails: additionalDetails,
                 });
 
                 // Update local metadata state
@@ -654,6 +752,15 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
 
     // Function to toggle edit mode for process details
     const handleToggleProcessDetailsEdit = () => {
+        if (!isEditingProcessDetails) {
+            // When entering edit mode, save current form data as backup
+            setTableFormData({
+                processName: processMetadata.processName,
+                description: processMetadata.description,
+                processOwner: processMetadata.processOwner,
+                processManager: processMetadata.processManager
+            });
+        }
         setIsEditingProcessDetails(!isEditingProcessDetails);
     };
 
@@ -674,6 +781,9 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
         setProcessMetadata(updatedMetadata);
         setIsEditingProcessDetails(false);
         
+        // Update version for process details change
+        updateVersionAndModificationDetails('process', `Updated process details: ${updatedMetadata.processName}`);
+        
         // If we have a current project, save it immediately with the updated metadata
         if (modeler) {
             try {
@@ -682,13 +792,14 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                 // Get the current XML
                 const { xml } = await modeler.saveXML({ format: true });
                 
-                // Update the file with new metadata
+                // Update the file with new metadata and version
                 await updateBpmnNode({
                     nodeId: projectId,
                     userId: user.id,
                     name: projectName,
                     content: xml,
                     processMetadata: updatedMetadata,
+                    advancedDetails: additionalDetails,
                 });
                 
                 toast.success('Process details saved successfully!');
@@ -703,11 +814,15 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
         }
     };
 
-    // Function to clear process details
-    const handleClearProcessDetails = () => {
-        setTableFormData(processMetadata);
+    // Function to cancel process details editing (revert to original values)
+    const handleCancelProcessDetails = () => {
+        setTableFormData({
+            processName: processMetadata.processName,
+            description: processMetadata.description,
+            processOwner: processMetadata.processOwner,
+            processManager: processMetadata.processManager
+        });
         setIsEditingProcessDetails(false);
-        toast.success('Process details reset to original values');
     };
 
     // Function to save the diagram as SVG
@@ -825,6 +940,11 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
     const handleProjectSelect = async (project: BpmnProject) => {
         console.log('Loading project:', project);
         console.log('Project metadata:', project.processMetadata);
+        console.log('Project table data:', {
+            signOffData: project.signOffData,
+            historyData: project.historyData,
+            triggerData: project.triggerData
+        });
         
         setProjectId(project.id);
         setProjectName(project.name);
@@ -845,6 +965,53 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
             };
             setProcessMetadata(emptyMetadata);
             setTableFormData(emptyMetadata);
+        }
+        
+        // Load table data if available
+        if (project.signOffData) {
+            console.log('Setting sign off data:', project.signOffData);
+            setSignOffData(project.signOffData);
+        } else {
+            setSignOffData({
+                responsibility: '',
+                date: '',
+                name: '',
+                designation: '',
+                signature: ''
+            });
+        }
+        
+        if (project.historyData) {
+            console.log('Setting history data:', project.historyData);
+            setHistoryData(project.historyData);
+        } else {
+            setHistoryData({
+                versionNo: '',
+                date: '',
+                statusRemarks: '',
+                author: ''
+            });
+        }
+        
+        if (project.triggerData) {
+            console.log('Setting trigger data:', project.triggerData);
+            setTriggerData(project.triggerData);
+        } else {
+            setTriggerData({
+                triggers: '',
+                inputs: '',
+                outputs: ''
+            });
+        }
+        
+        // Load advanced details if available
+        if (project.advancedDetails) {
+            console.log('Setting advanced details:', project.advancedDetails);
+            setAdditionalDetails(project.advancedDetails);
+        } else {
+            // Initialize with empty values if no advanced details exist
+            const initialAdvancedDetails = createInitialAdvancedDetails(user);
+            setAdditionalDetails(initialAdvancedDetails);
         }
         
         if (project.content && modeler) {
@@ -876,6 +1043,32 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
         };
         setProcessMetadata(emptyMetadata);
         setTableFormData(emptyMetadata);
+        
+        // Reset table data for new project
+        setSignOffData({
+            responsibility: '',
+            date: '',
+            name: '',
+            designation: '',
+            signature: ''
+        });
+        
+        setHistoryData({
+            versionNo: '',
+            date: '',
+            statusRemarks: '',
+            author: ''
+        });
+        
+        setTriggerData({
+            triggers: '',
+            inputs: '',
+            outputs: ''
+        });
+        
+        // Initialize advanced details for new project with creation information
+        const initialAdvancedDetails = createInitialAdvancedDetails(user);
+        setAdditionalDetails(initialAdvancedDetails);
         
         if (modeler) {
             modeler.importXML(INITIAL_DIAGRAM).catch((err: any) => {
@@ -1035,13 +1228,17 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                     const { xml } = await modeler.saveXML({ format: true });
                     const { svg } = await modeler.saveSVG();
 
+                    // Update version for diagram change (rename)
+                    updateVersionAndModificationDetails('diagram', `Project renamed to ${tempProjectName}`);
+
                     // Save project with the new name
                     await saveProjectToAPI({
                         id: projectId,
                         name: tempProjectName,
                         lastEdited: new Date().toISOString(),
                         xml,
-                        preview: svg
+                        preview: svg,
+                        advancedDetails: additionalDetails
                     }, user.id, user.role);
                 } catch (err) {
                     console.error('Error saving renamed project:', err);
@@ -1574,6 +1771,18 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                     description: `Imported from ${originalFileName}`,
                     processOwner: '',
                     processManager: '',
+                },
+                advancedDetails: {
+                    versionNo: '1.0.0',
+                    processStatus: '',
+                    classification: '',
+                    dateOfCreation: getCurrentDateTimeString(), // Actual creation time
+                    dateOfReview: '',
+                    effectiveDate: '',
+                    modificationDate: getCurrentDateTimeString(), // Initial modification time
+                    modifiedBy: getUserDisplayName(user), // Initial modifier
+                    changeDescription: 'Initial file creation from import',
+                    createdBy: getUserDisplayName(user), // Actual creator
                 }
             };
 
@@ -2536,6 +2745,16 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
             return;
         }
 
+        // Show the LaTeX generation popup instead of directly generating
+        setShowLatexPopup(true);
+    };
+
+    const handleGenerateLatexWithOptions = async () => {
+        if (!modeler || !user) {
+            toast.error('Please ensure you are logged in and the editor is loaded');
+            return;
+        }
+
         setGeneratingLatex(true);
         
         try {
@@ -2562,8 +2781,17 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
             
             console.log('Generating LaTeX from BPMN:', { fileName, hasMetadata: !!currentProcessMetadata });
             
-            // Convert BPMN to LaTeX with process metadata
-            const latexContent = convertBpmnToLatex(xml, fileName, currentProcessMetadata);
+            // Convert BPMN to LaTeX with table options and data
+            const latexContent = convertBpmnToLatex(
+                xml, 
+                fileName, 
+                currentProcessMetadata,
+                latexTableOptions,
+                signOffData,
+                historyData,
+                triggerData,
+                additionalDetails
+            );
             
             // Create LaTeX project
             const latexProject: LatexProject = {
@@ -2619,7 +2847,7 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                             content: latexProject.content,
                             documentMetadata: {
                                 title: latexProject.name,
-                                author: '',
+                                author: user.name || user.email || '',
                                 description: '',
                                 tags: [],
                             }
@@ -2672,7 +2900,7 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                 id: newProjectId,
                 name: fileName,
                 lastEdited: new Date().toISOString(),
-                createdBy: user.id,
+                createdBy: getUserDisplayName(user),
                 role: user.role,
                 xml,
                 preview: svg,
@@ -2681,45 +2909,306 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                     description: '',
                     processOwner: '',
                     processManager: '',
+                },
+                signOffData: {
+                    responsibility: '',
+                    date: '',
+                    name: '',
+                    designation: '',
+                    signature: ''
+                },
+                historyData: {
+                    versionNo: '',
+                    date: '',
+                    statusRemarks: '',
+                    author: ''
+                },
+                triggerData: {
+                    triggers: '',
+                    inputs: '',
+                    outputs: ''
+                },
+                advancedDetails: {
+                    versionNo: '1.0.0',
+                    processStatus: '',
+                    classification: '',
+                    dateOfCreation: getCurrentDateTimeString(), // Actual creation time
+                    dateOfReview: '',
+                    effectiveDate: '',
+                    modificationDate: getCurrentDateTimeString(), // Initial modification time
+                    modifiedBy: getUserDisplayName(user), // Initial modifier
+                    changeDescription: 'Initial file creation',
+                    createdBy: getUserDisplayName(user), // Actual creator
                 }
             };
 
-            // Save the project to the database
-            const result = await saveProjectToAPI(newProject, user.id, user.role);
-            
-            if (result.success) {
-                // Update the current project state with the actual fileId from the database
-                const actualFileId = result.fileId || newProjectId;
-                setProjectId(actualFileId);
-                setProjectName(fileName);
-                
-                // Reset metadata to empty
-                const emptyMetadata = {
+            // Create the file using the BPMN node API
+            const request: CreateNodeRequest = {
+                userId: user.id,
+                type: 'file',
+                name: fileName,
+                content: xml,
+                processMetadata: {
                     processName: '',
                     description: '',
                     processOwner: '',
                     processManager: '',
-                };
-                setProcessMetadata(emptyMetadata);
-                setTableFormData(emptyMetadata);
-
-                // Update the project with the actual fileId
-                const updatedProject = { ...newProject, id: actualFileId };
-
-                // Create the file in the file tree
-                if (onCreateFileFromEditor) {
-                    await onCreateFileFromEditor(updatedProject);
+                },
+                signOffData: {
+                    responsibility: '',
+                    date: '',
+                    name: '',
+                    designation: '',
+                    signature: ''
+                },
+                historyData: {
+                    versionNo: '',
+                    date: '',
+                    statusRemarks: '',
+                    author: ''
+                },
+                triggerData: {
+                    triggers: '',
+                    inputs: '',
+                    outputs: ''
+                },
+                advancedDetails: {
+                    versionNo: '1.0.0',
+                    processStatus: '',
+                    classification: '',
+                    dateOfCreation: getCurrentDateTimeString(), // Actual creation time
+                    dateOfReview: '',
+                    effectiveDate: '',
+                    modificationDate: getCurrentDateTimeString(), // Initial modification time
+                    modifiedBy: getUserDisplayName(user), // Initial modifier
+                    changeDescription: 'Initial file creation',
+                    createdBy: getUserDisplayName(user), // Actual creator
                 }
+            };
 
-                toast.success(`File "${fileName}" created successfully!`);
-            } else {
-                toast.error(`Failed to create file: ${result.error}`);
+            const newNode = await createBpmnNode(request);
+            
+            // Update the current project state
+            setProjectId(newNode.id);
+            setProjectName(fileName);
+            
+            // Reset metadata to empty
+            const emptyMetadata = {
+                processName: '',
+                description: '',
+                processOwner: '',
+                processManager: '',
+            };
+            setProcessMetadata(emptyMetadata);
+            setTableFormData(emptyMetadata);
+
+            // Create the file in the file tree
+            if (onCreateFileFromEditor) {
+                const newProject: BpmnProject = {
+                    id: newNode.id,
+                    name: newNode.name,
+                    content: newNode.content || '',
+                    processMetadata: newNode.processMetadata || emptyMetadata,
+                    advancedDetails: newNode.advancedDetails,
+                };
+                await onCreateFileFromEditor(newProject);
             }
+
+            toast.success(`File "${fileName}" created successfully!`);
         } catch (err) {
             console.error('Error creating new file:', err);
             toast.error('Failed to create file');
         } finally {
             setIsSaving(false);
+        }
+    };
+
+    // Add handlers for additional details
+    const handleToggleAdditionalDetailsEdit = () => {
+        if (!isEditingAdditionalDetails) {
+            // When entering edit mode, save current additional details as backup
+            setAdditionalDetailsBackup({ ...additionalDetails });
+        }
+        setIsEditingAdditionalDetails(!isEditingAdditionalDetails);
+    };
+
+    const handleSaveAdditionalDetails = async () => {
+        if (!user || !projectId) {
+            toast.error('No project selected');
+            return;
+        }
+
+        try {
+            // Update version for advanced details change
+            updateVersionAndModificationDetails('advanced', 'Advanced details modified');
+            
+            // Get the updated additional details after the version update
+            const updatedAdditionalDetails = {
+                ...additionalDetails,
+                versionNo: autoIncrementVersion(additionalDetails.versionNo, 'advanced'),
+                modificationDate: getCurrentDateTimeString(),
+                modifiedBy: getUserDisplayName(user),
+                changeDescription: createChangeDescription('advanced', 'Advanced details modified')
+            };
+            
+            console.log('Saving additional details:', updatedAdditionalDetails);
+            setIsEditingAdditionalDetails(false);
+            
+            // Save to database with updated details
+            await updateBpmnNode({
+                nodeId: projectId,
+                userId: user.id,
+                advancedDetails: updatedAdditionalDetails
+            });
+            
+            toast.success('Additional details saved successfully!');
+        } catch (error) {
+            console.error('Error saving additional details:', error);
+            toast.error('Failed to save additional details');
+        }
+    };
+
+    const handleCancelAdditionalDetails = () => {
+        setAdditionalDetails(additionalDetailsBackup);
+        setIsEditingAdditionalDetails(false);
+    };
+
+    // Save handlers for individual table data
+    const handleSaveSignOffData = async () => {
+        console.log('Saving Sign Off Data:', { projectId, user, signOffData });
+        
+        if (!projectId || !user) {
+            toast.error('No project selected or user not logged in');
+            return;
+        }
+
+        try {
+            // Update version for table data change
+            updateVersionAndModificationDetails('tables', `Updated sign off data: ${signOffData.responsibility || 'Sign off data modified'}`);
+            
+            const requestBody = {
+                nodeId: projectId,
+                userId: user.id,
+                signOffData: signOffData,
+                advancedDetails: additionalDetails
+            };
+            
+            console.log('Sending request:', requestBody);
+            
+            const response = await fetch('/api/bpmn-nodes', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+            });
+
+            console.log('Response status:', response.status);
+            
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Save successful:', result);
+                toast.success('Sign OFF data saved successfully!');
+            } else {
+                const errorText = await response.text();
+                console.error('Save failed:', errorText);
+                toast.error('Failed to save Sign OFF data');
+            }
+        } catch (error) {
+            console.error('Error saving Sign OFF data:', error);
+            toast.error('Failed to save Sign OFF data');
+        }
+    };
+
+    const handleSaveHistoryData = async () => {
+        console.log('Saving History Data:', { projectId, user, historyData });
+        
+        if (!projectId || !user) {
+            toast.error('No project selected or user not logged in');
+            return;
+        }
+
+        try {
+            // Update version for table data change
+            updateVersionAndModificationDetails('tables', `Updated history data: ${historyData.statusRemarks || 'History data modified'}`);
+            
+            const requestBody = {
+                nodeId: projectId,
+                userId: user.id,
+                historyData: historyData,
+                advancedDetails: additionalDetails
+            };
+            
+            console.log('Sending request:', requestBody);
+            
+            const response = await fetch('/api/bpmn-nodes', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+            });
+
+            console.log('Response status:', response.status);
+            
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Save successful:', result);
+                toast.success('History data saved successfully!');
+            } else {
+                const errorText = await response.text();
+                console.error('Save failed:', errorText);
+                toast.error('Failed to save History data');
+            }
+        } catch (error) {
+            console.error('Error saving History data:', error);
+            toast.error('Failed to save History data');
+        }
+    };
+
+    const handleSaveTriggerData = async () => {
+        console.log('Saving Trigger Data:', { projectId, user, triggerData });
+        
+        if (!projectId || !user) {
+            toast.error('No project selected or user not logged in');
+            return;
+        }
+
+        try {
+            // Update version for table data change
+            updateVersionAndModificationDetails('tables', `Updated trigger data: ${triggerData.triggers || 'Trigger data modified'}`);
+            
+            const requestBody = {
+                nodeId: projectId,
+                userId: user.id,
+                triggerData: triggerData,
+                advancedDetails: additionalDetails
+            };
+            
+            console.log('Sending request:', requestBody);
+            
+            const response = await fetch('/api/bpmn-nodes', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+            });
+
+            console.log('Response status:', response.status);
+            
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Save successful:', result);
+                toast.success('Trigger data saved successfully!');
+            } else {
+                const errorText = await response.text();
+                console.error('Save failed:', errorText);
+                toast.error('Failed to save Trigger data');
+            }
+        } catch (error) {
+            console.error('Error saving Trigger data:', error);
+            toast.error('Failed to save Trigger data');
         }
     };
 
@@ -2883,10 +3372,10 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                                     Save
                                 </button>
                                 <button
-                                            onClick={handleClearProcessDetails}
+                                            onClick={handleCancelProcessDetails}
                                     className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
                                 >
-                                    Clear
+                                    Cancel
                                 </button>
                                     </>
                                 ) : (
@@ -2897,6 +3386,181 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                                         Edit
                                     </button>
                                 )}
+                            </div>
+                        </div>
+
+                        {/* Advanced Details Section */}
+                        <div className="border-t border-gray-200 pt-6 mt-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-gray-800">Advanced Details</h3>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                {/* Version No */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        1. Version No
+                                    </label>
+                                    <div className="text-gray-700 min-h-[24px] flex items-center bg-gray-50 px-3 py-2 rounded-md">
+                                        {additionalDetails.versionNo}
+                                    </div>
+                                </div>
+
+                                {/* Process Status */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        2. Process Status
+                                    </label>
+                                    {isEditingAdditionalDetails ? (
+                                        <select
+                                            value={additionalDetails.processStatus}
+                                            onChange={(e) => setAdditionalDetails(prev => ({ ...prev, processStatus: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        >
+                                            <option value="">Select Status</option>
+                                            <option value="draft">Draft</option>
+                                            <option value="review">Under Review</option>
+                                            <option value="approved">Approved</option>
+                                            <option value="rejected">Rejected</option>
+                                            <option value="archived">Archived</option>
+                                        </select>
+                                    ) : (
+                                        <div className="text-gray-700 min-h-[24px] flex items-center">
+                                            {additionalDetails.processStatus || 'No status selected'}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Classification */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        3. Classification
+                                    </label>
+                                    {isEditingAdditionalDetails ? (
+                                        <select
+                                            value={additionalDetails.classification}
+                                            onChange={(e) => setAdditionalDetails(prev => ({ ...prev, classification: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        >
+                                            <option value="">Select Classification</option>
+                                            <option value="public">Public</option>
+                                            <option value="internal">Internal</option>
+                                            <option value="confidential">Confidential</option>
+                                            <option value="restricted">Restricted</option>
+                                        </select>
+                                    ) : (
+                                        <div className="text-gray-700 min-h-[24px] flex items-center">
+                                            {additionalDetails.classification || 'No classification selected'}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Date of Creation */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        4. Date of Creation
+                                    </label>
+                                    <div className="text-gray-700 min-h-[24px] flex items-center bg-gray-50 px-3 py-2 rounded-md">
+                                        {formatDateForDisplay(additionalDetails.dateOfCreation)}
+                                    </div>
+                                </div>
+
+                                {/* Date of Review */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        5. Date of Review
+                                    </label>
+                                    <div className="text-gray-700 min-h-[24px] flex items-center bg-gray-50 px-3 py-2 rounded-md">
+                                        {additionalDetails.dateOfReview || 'Not reviewed yet'}
+                                    </div>
+                                </div>
+
+                                {/* Effective Date */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        6. Effective Date
+                                    </label>
+                                    {isEditingAdditionalDetails ? (
+                                        <input
+                                            type="date"
+                                            value={additionalDetails.effectiveDate}
+                                            onChange={(e) => setAdditionalDetails(prev => ({ ...prev, effectiveDate: e.target.value }))}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            title="Select effective date (no time component)"
+                                        />
+                                    ) : (
+                                        <div className="text-gray-700 min-h-[24px] flex items-center">
+                                            {additionalDetails.effectiveDate ? formatDateOnlyForDisplay(additionalDetails.effectiveDate) : 'No effective date set'}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Modification Date */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        7. Modification Date
+                                    </label>
+                                    <div className="text-gray-700 min-h-[24px] flex items-center bg-gray-50 px-3 py-2 rounded-md">
+                                        {formatDateForDisplay(additionalDetails.modificationDate)}
+                                    </div>
+                                </div>
+
+                                {/* Modified By */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        8. Modified By
+                                    </label>
+                                    <div className="text-gray-700 min-h-[24px] flex items-center bg-gray-50 px-3 py-2 rounded-md">
+                                        {additionalDetails.modifiedBy || 'Not modified yet'}
+                                    </div>
+                                </div>
+
+                                {/* Change Description */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        9. Change Description
+                                    </label>
+                                    <div className="text-gray-700 min-h-[24px] whitespace-pre-wrap bg-gray-50 px-3 py-2 rounded-md">
+                                        {additionalDetails.changeDescription || 'No change description entered'}
+                                    </div>
+                                </div>
+
+                                {/* Created By */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        10. Created By
+                                    </label>
+                                    <div className="text-gray-700 min-h-[24px] flex items-center bg-gray-50 px-3 py-2 rounded-md">
+                                        {additionalDetails.createdBy || 'Not specified'}
+                                    </div>
+                                </div>
+
+                                {/* Action Buttons for Additional Details */}
+                                <div className="flex space-x-2 pt-4">
+                                    {isEditingAdditionalDetails ? (
+                                        <>
+                                            <button
+                                                onClick={handleSaveAdditionalDetails}
+                                                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                onClick={handleCancelAdditionalDetails}
+                                                className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button
+                                            onClick={handleToggleAdditionalDetailsEdit}
+                                            className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -3349,6 +4013,446 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                     duplicateInfo={duplicateInfo}
                     projectNameMatch={projectNameMatch}
                 />
+
+                {/* LaTeX Generation Popup Modal */}
+                {showLatexPopup && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center modal-overlay">
+                        <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden relative modal-content">
+                            {/* Header */}
+                            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                                <h2 className="text-xl font-semibold text-gray-900">Generate LaTeX Document</h2>
+                                <button
+                                    onClick={() => setShowLatexPopup(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="flex h-[calc(90vh-140px)]">
+                                {/* Left Side - Options */}
+                                <div className="w-1/3 p-6 border-r border-gray-200 bg-gray-50">
+                                    <h3 className="text-lg font-medium text-gray-900 mb-4">Options</h3>
+                                    
+                                    <div className="space-y-3">
+                                        <button
+                                            onClick={() => setSelectedLeftOption('tables')}
+                                            className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
+                                                selectedLeftOption === 'tables'
+                                                    ? 'bg-blue-50 border-blue-200 text-blue-700' 
+                                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <span className="text-sm font-medium">Tables to Include</span>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => setSelectedLeftOption('signoff')}
+                                            className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
+                                                selectedLeftOption === 'signoff'
+                                                    ? 'bg-blue-50 border-blue-200 text-blue-700' 
+                                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <span className="text-sm font-medium">Sign OFF Table</span>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => setSelectedLeftOption('history')}
+                                            className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
+                                                selectedLeftOption === 'history'
+                                                    ? 'bg-blue-50 border-blue-200 text-blue-700' 
+                                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <span className="text-sm font-medium">History Table</span>
+                                        </button>
+                                        
+                                        <button
+                                            onClick={() => setSelectedLeftOption('trigger')}
+                                            className={`w-full text-left p-3 rounded-lg border transition-all duration-200 ${
+                                                selectedLeftOption === 'trigger'
+                                                    ? 'bg-blue-50 border-blue-200 text-blue-700' 
+                                                    : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
+                                            }`}
+                                        >
+                                            <span className="text-sm font-medium">Trigger Table</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Right Side - Dynamic Content */}
+                                <div className="w-2/3 p-6 overflow-y-auto">
+                                    {selectedLeftOption === 'tables' && (
+                                        <div className="space-y-6">
+                                            <h3 className="text-lg font-medium text-gray-900 mb-4">Select Tables to Include</h3>
+                                            
+                                            <div className="p-4 border border-gray-200 rounded-lg">
+                                                {!isAnyTableSelected && (
+                                                    <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                                                        <p className="text-sm text-yellow-800">
+                                                            ⚠️ Please select at least one table to include in the LaTeX document.
+                                                        </p>
+                                                    </div>
+                                                )}
+                                                <div className="space-y-3">
+                                                    <label className="flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={latexTableOptions.processTable}
+                                                            onChange={(e) => setLatexTableOptions(prev => ({
+                                                                ...prev,
+                                                                processTable: e.target.checked
+                                                            }))}
+                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <span className="ml-2 text-sm font-medium text-gray-700">Process Table</span>
+                                                    </label>
+                                                    
+                                                    <label className="flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={latexTableOptions.processDetailsTable}
+                                                            onChange={(e) => setLatexTableOptions(prev => ({
+                                                                ...prev,
+                                                                processDetailsTable: e.target.checked
+                                                            }))}
+                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <span className="ml-2 text-sm font-medium text-gray-700">Process Details Table</span>
+                                                    </label>
+                                                    
+                                                    <label className="flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={latexTableOptions.signOffTable}
+                                                            onChange={(e) => setLatexTableOptions(prev => ({
+                                                                ...prev,
+                                                                signOffTable: e.target.checked
+                                                            }))}
+                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <span className="ml-2 text-sm font-medium text-gray-700">Sign OFF Table</span>
+                                                    </label>
+                                                    
+                                                    <label className="flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={latexTableOptions.historyTable}
+                                                            onChange={(e) => setLatexTableOptions(prev => ({
+                                                                ...prev,
+                                                                historyTable: e.target.checked
+                                                            }))}
+                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <span className="ml-2 text-sm font-medium text-gray-700">History Table</span>
+                                                    </label>
+                                                    
+                                                    <label className="flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={latexTableOptions.triggerTable}
+                                                            onChange={(e) => setLatexTableOptions(prev => ({
+                                                                ...prev,
+                                                                triggerTable: e.target.checked
+                                                            }))}
+                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <span className="ml-2 text-sm font-medium text-gray-700">Trigger Table</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Action Buttons - Positioned within Tables to Include section */}
+                                            <div className="flex items-center justify-end space-x-3 pt-6 border-t border-gray-200">
+                                                <button
+                                                    onClick={() => setShowLatexPopup(false)}
+                                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleGenerateLatexWithOptions}
+                                                    disabled={generatingLatex || !isAnyTableSelected}
+                                                    className={`px-4 py-2 text-sm font-medium text-white border border-transparent rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors ${
+                                                        generatingLatex || !isAnyTableSelected 
+                                                            ? 'bg-gray-400 cursor-not-allowed opacity-50' 
+                                                            : 'bg-blue-600 hover:bg-blue-700'
+                                                    }`}
+                                                >
+                                                    {generatingLatex ? 'Generating...' : 'Generate LaTeX'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    {selectedLeftOption === 'signoff' && (
+                                        <div className="space-y-6">
+                                            <h3 className="text-lg font-medium text-gray-900 mb-4">Sign OFF Table Configuration</h3>
+                                            
+                                            <div className="border border-gray-200 rounded-lg p-4">
+                                                <h4 className="text-md font-medium text-gray-900 mb-3">Sign OFF Table</h4>
+                                                
+                                                {/* Table Header */}
+                                                <div className="overflow-x-auto">
+                                                    <table className="min-w-full border border-gray-300">
+                                                        <thead>
+                                                            <tr className="bg-gray-50">
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Responsibility</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Date</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Name</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Designation</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Signature</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={signOffData.responsibility}
+                                                                        onChange={(e) => setSignOffData(prev => ({
+                                                                            ...prev,
+                                                                            responsibility: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter responsibility"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="date"
+                                                                        value={signOffData.date}
+                                                                        onChange={(e) => setSignOffData(prev => ({
+                                                                            ...prev,
+                                                                            date: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={signOffData.name}
+                                                                        onChange={(e) => setSignOffData(prev => ({
+                                                                            ...prev,
+                                                                            name: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter name"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={signOffData.designation}
+                                                                        onChange={(e) => setSignOffData(prev => ({
+                                                                            ...prev,
+                                                                            designation: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter designation"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={signOffData.signature}
+                                                                        onChange={(e) => setSignOffData(prev => ({
+                                                                            ...prev,
+                                                                            signature: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter signature"
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                
+                                                {/* Save Button */}
+                                                <div className="mt-4 flex justify-end">
+                                                    <button
+                                                        onClick={handleSaveSignOffData}
+                                                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                                                    >
+                                                        Save Sign OFF Data
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    {selectedLeftOption === 'history' && (
+                                        <div className="space-y-6">
+                                            <h3 className="text-lg font-medium text-gray-900 mb-4">History Table Configuration</h3>
+                                            
+                                            <div className="border border-gray-200 rounded-lg p-4">
+                                                <h4 className="text-md font-medium text-gray-900 mb-3">History Table</h4>
+                                                
+                                                {/* Table Header */}
+                                                <div className="overflow-x-auto">
+                                                    <table className="min-w-full border border-gray-300">
+                                                        <thead>
+                                                            <tr className="bg-gray-50">
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Version No</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Date</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Status/Remarks</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Author</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={historyData.versionNo}
+                                                                        onChange={(e) => setHistoryData(prev => ({
+                                                                            ...prev,
+                                                                            versionNo: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter version number"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="date"
+                                                                        value={historyData.date}
+                                                                        onChange={(e) => setHistoryData(prev => ({
+                                                                            ...prev,
+                                                                            date: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={historyData.statusRemarks}
+                                                                        onChange={(e) => setHistoryData(prev => ({
+                                                                            ...prev,
+                                                                            statusRemarks: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter status or remarks"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={historyData.author}
+                                                                        onChange={(e) => setHistoryData(prev => ({
+                                                                            ...prev,
+                                                                            author: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter author"
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                
+                                                {/* Save Button */}
+                                                <div className="mt-4 flex justify-end">
+                                                    <button
+                                                        onClick={handleSaveHistoryData}
+                                                        className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                                                    >
+                                                        Save History Data
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+                                    {selectedLeftOption === 'trigger' && (
+                                        <div className="space-y-6">
+                                            <h3 className="text-lg font-medium text-gray-900 mb-4">Trigger Table Configuration</h3>
+                                            
+                                            <div className="border border-gray-200 rounded-lg p-4">
+                                                <h4 className="text-md font-medium text-gray-900 mb-3">Trigger Table</h4>
+                                                
+                                                {/* Table Header */}
+                                                <div className="overflow-x-auto">
+                                                    <table className="min-w-full border border-gray-300">
+                                                        <thead>
+                                                            <tr className="bg-gray-50">
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Triggers</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Inputs</th>
+                                                                <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-700">Outputs</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            <tr>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={triggerData.triggers}
+                                                                        onChange={(e) => setTriggerData(prev => ({
+                                                                            ...prev,
+                                                                            triggers: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter triggers"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={triggerData.inputs}
+                                                                        onChange={(e) => setTriggerData(prev => ({
+                                                                            ...prev,
+                                                                            inputs: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter inputs"
+                                                                    />
+                                                                </td>
+                                                                <td className="border border-gray-300 px-4 py-2">
+                                                                    <input
+                                                                        type="text"
+                                                                        value={triggerData.outputs}
+                                                                        onChange={(e) => setTriggerData(prev => ({
+                                                                            ...prev,
+                                                                            outputs: e.target.value
+                                                                        }))}
+                                                                        className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                                        placeholder="Enter outputs"
+                                                                    />
+                                                                </td>
+                                                            </tr>
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                
+                                                {/* Save Button */}
+                                                <div className="mt-4 flex justify-end">
+                                                    <button
+                                                        onClick={handleSaveTriggerData}
+                                                        className="px-4 py-2 bg-blue-700 text-white rounded-md hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors"
+                                                    >
+                                                        Save Trigger Data
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    
+
+                                </div>
+                            </div>
+
+
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

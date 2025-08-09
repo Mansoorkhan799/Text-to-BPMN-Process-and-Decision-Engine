@@ -109,7 +109,12 @@ export async function POST(request: NextRequest) {
       parentId: parentId || null,
       children: type === 'folder' ? [] : undefined,
       content: type === 'file' ? content : undefined,
-      documentMetadata: type === 'file' ? documentMetadata : undefined,
+      documentMetadata: type === 'file' ? ({
+        title: (documentMetadata && documentMetadata.title) ? documentMetadata.title : name,
+        author: (documentMetadata && documentMetadata.author) ? documentMetadata.author : '',
+        description: (documentMetadata && documentMetadata.description) ? documentMetadata.description : '',
+        tags: (documentMetadata && documentMetadata.tags) ? documentMetadata.tags : [],
+      }) : undefined,
     });
 
     await newNode.save();

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import connectDB from '@/lib/mongodb';
 import BpmnNode from '@/models/BpmnNode';
+import User from '@/models/User';
 import { v4 as uuidv4 } from 'uuid';
 
 interface TreeNode {
@@ -16,23 +17,82 @@ interface TreeNode {
     processOwner: string;
     processManager: string;
   };
+  advancedDetails?: {
+    versionNo: string;
+    processStatus: string;
+    classification: string;
+    dateOfCreation: Date;
+    dateOfReview?: Date;
+    effectiveDate?: Date;
+    modificationDate: Date;
+    modifiedBy: string;
+    changeDescription: string;
+    createdBy: string;
+  };
+  // Add the three table data structures
+  signOffData?: {
+    responsibility: string;
+    date: string;
+    name: string;
+    designation: string;
+    signature: string;
+  };
+  historyData?: {
+    versionNo: string;
+    date: string;
+    statusRemarks: string;
+    author: string;
+  };
+  triggerData?: {
+    triggers: string;
+    inputs: string;
+    outputs: string;
+  };
   createdAt: Date;
   updatedAt: Date;
 }
 
-// GET: Fetch the complete tree for a user
+// GET: Fetch the complete tree for a user or a specific node
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
     
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
+    const nodeId = searchParams.get('nodeId');
     
     if (!userId) {
       return NextResponse.json({ error: 'userId is required' }, { status: 400 });
     }
 
-    // Fetch all nodes for the user
+    // If nodeId is provided, return the specific node
+    if (nodeId) {
+      const node = await BpmnNode.findOne({ id: nodeId, userId });
+      if (!node) {
+        return NextResponse.json({ error: 'Node not found' }, { status: 404 });
+      }
+      
+      return NextResponse.json({ 
+        success: true, 
+        node: {
+          id: node.id,
+          name: node.name,
+          type: node.type,
+          parentId: node.parentId,
+          children: node.children || [],
+          content: node.content,
+          processMetadata: node.processMetadata,
+          advancedDetails: node.advancedDetails,
+          signOffData: node.signOffData,
+          historyData: node.historyData,
+          triggerData: node.triggerData,
+          createdAt: node.createdAt,
+          updatedAt: node.updatedAt,
+        }
+      });
+    }
+
+    // Otherwise, fetch all nodes for the user and build the tree
     const nodes = await BpmnNode.find({ userId }).sort({ createdAt: 1 });
     
     // Build the tree structure
@@ -47,6 +107,10 @@ export async function GET(request: NextRequest) {
           children: node.type === 'folder' ? buildTree(node.id) : [],
           content: node.type === 'file' ? node.content : undefined,
           processMetadata: node.type === 'file' ? node.processMetadata : undefined,
+          advancedDetails: node.type === 'file' ? node.advancedDetails : undefined,
+          signOffData: node.type === 'file' ? node.signOffData : undefined,
+          historyData: node.type === 'file' ? node.historyData : undefined,
+          triggerData: node.type === 'file' ? node.triggerData : undefined,
           createdAt: node.createdAt,
           updatedAt: node.updatedAt,
         }));
@@ -67,7 +131,7 @@ export async function POST(request: NextRequest) {
     await connectDB();
     
     const body = await request.json();
-    const { userId, type, name, parentId, content, processMetadata } = body;
+    const { userId, type, name, parentId, content, processMetadata, advancedDetails, signOffData, historyData, triggerData } = body;
     
     if (!userId || !type || !name) {
       return NextResponse.json({ error: 'userId, type, and name are required' }, { status: 400 });
@@ -101,6 +165,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
+          // Get user information for createdBy field and creation date
+      let createdByValue = userId; // Default to userId
+      let creationDate = ''; // Will be set only if provided
+      
+      if (type === 'file') {
+        if (advancedDetails?.createdBy) {
+          // Use the createdBy value from the request if provided
+          createdByValue = advancedDetails.createdBy;
+        } else {
+          // Fetch user's name from database
+          try {
+            const user = await User.findById(userId);
+            if (user) {
+              createdByValue = user.name || user.email || userId;
+            }
+          } catch (error) {
+            console.error('Error fetching user info:', error);
+            // Fallback to userId if user fetch fails
+          }
+        }
+        
+        // Use the creation date from the request if provided
+        if (advancedDetails?.dateOfCreation) {
+          creationDate = advancedDetails.dateOfCreation;
+        }
+      }
+
     const newNode = new BpmnNode({
       id: nodeId,
       userId,
@@ -110,6 +201,36 @@ export async function POST(request: NextRequest) {
       children: type === 'folder' ? [] : undefined,
       content: type === 'file' ? content : undefined,
       processMetadata: type === 'file' ? processMetadata : undefined,
+              advancedDetails: type === 'file' ? (advancedDetails || {
+          versionNo: '1.0.0',
+          processStatus: '',
+          classification: '',
+          dateOfCreation: creationDate || '',
+          dateOfReview: '',
+          effectiveDate: '',
+          modificationDate: '',
+          modifiedBy: '',
+          changeDescription: '',
+          createdBy: createdByValue || '',
+        }) : undefined,
+      signOffData: type === 'file' ? (signOffData || {
+        responsibility: '',
+        date: '',
+        name: '',
+        designation: '',
+        signature: ''
+      }) : undefined,
+      historyData: type === 'file' ? (historyData || {
+        versionNo: '',
+        date: '',
+        statusRemarks: '',
+        author: ''
+      }) : undefined,
+      triggerData: type === 'file' ? (triggerData || {
+        triggers: '',
+        inputs: '',
+        outputs: ''
+      }) : undefined,
     });
 
     await newNode.save();
@@ -124,6 +245,10 @@ export async function POST(request: NextRequest) {
         children: newNode.children || [],
         content: newNode.content,
         processMetadata: newNode.processMetadata,
+        advancedDetails: newNode.advancedDetails,
+        signOffData: newNode.signOffData,
+        historyData: newNode.historyData,
+        triggerData: newNode.triggerData,
         createdAt: newNode.createdAt,
         updatedAt: newNode.updatedAt,
       }
@@ -140,7 +265,7 @@ export async function PUT(request: NextRequest) {
     await connectDB();
     
     const body = await request.json();
-    const { nodeId, userId, name, content, parentId, processMetadata } = body;
+    const { nodeId, userId, name, content, parentId, processMetadata, advancedDetails, signOffData, historyData, triggerData } = body;
     
     if (!nodeId || !userId) {
       return NextResponse.json({ error: 'nodeId and userId are required' }, { status: 400 });
@@ -157,6 +282,24 @@ export async function PUT(request: NextRequest) {
     if (name !== undefined) updateData.name = name;
     if (content !== undefined) updateData.content = content;
     if (processMetadata !== undefined) updateData.processMetadata = processMetadata;
+    if (signOffData !== undefined) updateData.signOffData = signOffData;
+    if (historyData !== undefined) updateData.historyData = historyData;
+    if (triggerData !== undefined) updateData.triggerData = triggerData;
+    
+    if (advancedDetails !== undefined) {
+      // Increment version number when advanced details are updated
+      const currentVersion = currentNode.advancedDetails?.versionNo || '1.0.0';
+      const versionParts = currentVersion.split('.');
+      const major = parseInt(versionParts[0]) || 1;
+      const minor = parseInt(versionParts[1]) || 0;
+      const patch = parseInt(versionParts[2]) || 0;
+      
+      updateData.advancedDetails = {
+        ...advancedDetails,
+        versionNo: `${major}.${minor}.${patch + 1}`,
+        modificationDate: new Date(),
+      };
+    }
 
     // Handle parent change
     if (parentId !== undefined && parentId !== currentNode.parentId) {
@@ -206,6 +349,7 @@ export async function PUT(request: NextRequest) {
         children: updatedNode.children || [],
         content: updatedNode.content,
         processMetadata: updatedNode.processMetadata,
+        advancedDetails: updatedNode.advancedDetails,
         createdAt: updatedNode.createdAt,
         updatedAt: updatedNode.updatedAt,
       }

@@ -1,20 +1,16 @@
 const templates = [
   {
-    name: "Blank Document",
-    description: "A basic LaTeX document template with minimal structure",
+    name: "Blank Page (Default)",
+    description: "A basic LaTeX document template with minimal structure for simple documents",
     category: "Blank Document",
     content: `\\documentclass{article}
-\\usepackage[utf8]{inputenc}
 \\usepackage{amsmath}
 \\usepackage{amssymb}
 \\usepackage{graphicx}
 \\usepackage{hyperref}
-\\usepackage{geometry}
 
-\\geometry{margin=1in}
-
-\\title{Document Title}
-\\author{Your Name}
+\\title{LaTeX Document}
+\\author{Author}
 \\date{\\today}
 
 \\begin{document}
@@ -22,23 +18,14 @@ const templates = [
 \\maketitle
 
 \\section{Introduction}
-This is a blank LaTeX document. You can start writing your content here.
-
-\\section{Section Title}
-Add your content in this section.
-
-\\subsection{Subsection Title}
-You can add subsections as needed.
-
-\\section{Conclusion}
-Conclude your document here.
+This is a sample LaTeX document. You can edit it in the editor.
 
 \\end{document}`,
     isDefault: true
   },
   {
     name: "Guidelines Template",
-    description: "Template for creating guidelines and procedures",
+    description: "Template for creating guidelines and procedures with clear structure",
     category: "Guidelines",
     content: `\\documentclass{article}
 \\usepackage[utf8]{inputenc}
@@ -51,10 +38,6 @@ Conclude your document here.
 \\usepackage{fancyhdr}
 
 \\geometry{margin=1in}
-\\pagestyle{fancy}
-\\fancyhf{}
-\\rhead{Guidelines Document}
-\\lhead{Company Name}
 
 \\title{Guidelines Title}
 \\author{Department Name}
@@ -63,9 +46,6 @@ Conclude your document here.
 \\begin{document}
 
 \\maketitle
-
-\\tableofcontents
-\\newpage
 
 \\section{Purpose}
 This document outlines the guidelines for [specific process or procedure].
@@ -112,9 +92,9 @@ This document will be reviewed [frequency] and updated as necessary.
     isDefault: false
   },
   {
-    name: "Policy Process Template",
-    description: "Template for policy and process documentation",
-    category: "Policy Process",
+    name: "Process Template",
+    description: "Template for documenting business processes and workflows",
+    category: "Process",
     content: `\\documentclass{article}
 \\usepackage[utf8]{inputenc}
 \\usepackage{amsmath}
@@ -124,28 +104,110 @@ This document will be reviewed [frequency] and updated as necessary.
 \\usepackage{geometry}
 \\usepackage{enumitem}
 \\usepackage{fancyhdr}
-\\usepackage{tikz}
 
 \\geometry{margin=1in}
-\\pagestyle{fancy}
-\\fancyhf{}
-\\rhead{Policy Document}
-\\lhead{Organization Name}
 
-\\title{Policy Title}
-\\subtitle{Process Documentation}
-\\author{Policy Owner}
+\\title{Process Title}
+\\author{Process Owner}
 \\date{\\today}
 
 \\begin{document}
 
 \\maketitle
 
-\\tableofcontents
-\\newpage
+\\section{Process Overview}
+Brief description of the process and its objectives.
 
-\\section{Executive Summary}
-Brief overview of the policy and its objectives.
+\\section{Process Scope}
+This process covers [describe what the process includes and excludes].
+
+\\section{Process Objectives}
+\\begin{itemize}
+    \\item Objective 1
+    \\item Objective 2
+    \\item Objective 3
+\\end{itemize}
+
+\\section{Process Steps}
+\\subsection{Step 1: Initiation}
+\\begin{enumerate}
+    \\item Action 1
+    \\item Action 2
+    \\item Action 3
+\\end{enumerate}
+
+\\subsection{Step 2: Execution}
+\\begin{enumerate}
+    \\item Action 1
+    \\item Action 2
+    \\item Action 3
+\\end{enumerate}
+
+\\subsection{Step 3: Completion}
+\\begin{enumerate}
+    \\item Action 1
+    \\item Action 2
+    \\item Action 3
+\\end{enumerate}
+
+\\section{Roles and Responsibilities}
+\\begin{itemize}
+    \\item \\textbf{Process Owner}: [Responsibilities]
+    \\item \\textbf{Process Manager}: [Responsibilities]
+    \\item \\textbf{Team Members}: [Responsibilities]
+\\end{itemize}
+
+\\section{Inputs and Outputs}
+\\subsection{Inputs}
+\\begin{itemize}
+    \\item Input 1
+    \\item Input 2
+    \\item Input 3
+\\end{itemize}
+
+\\subsection{Outputs}
+\\begin{itemize}
+    \\item Output 1
+    \\item Output 2
+    \\item Output 3
+\\end{itemize}
+
+\\section{Performance Metrics}
+\\begin{itemize}
+    \\item Metric 1: [Description]
+    \\item Metric 2: [Description]
+    \\item Metric 3: [Description]
+\\end{itemize}
+
+\\section{Process Controls}
+Description of controls and checkpoints in the process.
+
+\\end{document}`,
+    isDefault: false
+  },
+  {
+    name: "Policy Template",
+    description: "Template for creating organizational policies and procedures",
+    category: "Policy",
+    content: `\\documentclass{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage{amsmath}
+\\usepackage{amssymb}
+\\usepackage{graphicx}
+\\usepackage{hyperref}
+\\usepackage{geometry}
+\\usepackage{enumitem}
+\\usepackage{fancyhdr}
+
+\\geometry{margin=1in}
+
+\\title{Policy Title}
+\\author{Policy Owner}
+\\date{\\today}
+
+\\begin{document}
+
+\\maketitle
 
 \\section{Policy Statement}
 Clear statement of the policy and its intent.
@@ -214,9 +276,9 @@ Process for updating the policy.
     isDefault: false
   },
   {
-    name: "Runbook Standard Template",
-    description: "Template for technical runbooks and procedures",
-    category: "Runbook Standard",
+    name: "Run Book Template",
+    description: "Template for technical runbooks and operational procedures",
+    category: "Runbook",
     content: `\\documentclass{article}
 \\usepackage[utf8]{inputenc}
 \\usepackage{amsmath}
@@ -226,26 +288,16 @@ Process for updating the policy.
 \\usepackage{geometry}
 \\usepackage{enumitem}
 \\usepackage{fancyhdr}
-\\usepackage{listings}
-\\usepackage{xcolor}
 
 \\geometry{margin=1in}
-\\pagestyle{fancy}
-\\fancyhf{}
-\\rhead{Runbook}
-\\lhead{Technical Operations}
 
 \\title{Runbook Title}
-\\subtitle{Standard Operating Procedure}
 \\author{Technical Team}
 \\date{\\today}
 
 \\begin{document}
 
 \\maketitle
-
-\\tableofcontents
-\\newpage
 
 \\section{Overview}
 Brief description of the procedure and its purpose.
@@ -323,9 +375,9 @@ What to document after completing the procedure.
     isDefault: false
   },
   {
-    name: "Operating Procedure Template",
-    description: "Template for detailed operating procedures",
-    category: "Operating Procedure",
+    name: "Standard Operating Procedure (SOP) Template",
+    description: "Template for detailed standard operating procedures",
+    category: "SOP",
     content: `\\documentclass{article}
 \\usepackage[utf8]{inputenc}
 \\usepackage{amsmath}
@@ -335,25 +387,16 @@ What to document after completing the procedure.
 \\usepackage{geometry}
 \\usepackage{enumitem}
 \\usepackage{fancyhdr}
-\\usepackage{tikz}
 
 \\geometry{margin=1in}
-\\pagestyle{fancy}
-\\fancyhf{}
-\\rhead{Operating Procedure}
-\\lhead{Department Name}
 
-\\title{Operating Procedure Title}
-\\subtitle{Standard Operating Procedure}
+\\title{Standard Operating Procedure Title}
 \\author{Procedure Owner}
 \\date{\\today}
 
 \\begin{document}
 
 \\maketitle
-
-\\tableofcontents
-\\newpage
 
 \\section{Procedure Overview}
 \\subsection{Purpose}
@@ -460,24 +503,45 @@ Training needed to perform this procedure.
   }
 ];
 
-// Function to seed templates
+// Function to clear existing templates and seed new ones
 async function seedTemplates() {
   try {
-    const response = await fetch('http://localhost:3000/api/latex-templates', {
-      method: 'POST',
+    console.log('Starting template seeding process...');
+    
+    // First, clear all existing templates
+    const clearResponse = await fetch('http://localhost:3000/api/latex-templates', {
+      method: 'DELETE',
       headers: {
         'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(templates[0]), // Seed one template at a time
+      }
     });
     
-    if (response.ok) {
-      console.log('Template seeded successfully');
+    if (clearResponse.ok) {
+      console.log('Existing templates cleared successfully');
     } else {
-      console.error('Failed to seed template');
+      console.error('Failed to clear existing templates');
     }
+    
+    // Then seed each template
+    for (const template of templates) {
+      const response = await fetch('http://localhost:3000/api/latex-templates', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(template),
+      });
+      
+      if (response.ok) {
+        console.log(`Template "${template.name}" seeded successfully`);
+      } else {
+        console.error(`Failed to seed template "${template.name}"`);
+      }
+    }
+    
+    console.log('Template seeding process completed!');
   } catch (error) {
-    console.error('Error seeding template:', error);
+    console.error('Error seeding templates:', error);
   }
 }
 
