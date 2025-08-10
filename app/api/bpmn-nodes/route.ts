@@ -48,6 +48,7 @@ interface TreeNode {
     inputs: string;
     outputs: string;
   };
+  selectedStandards?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -86,6 +87,7 @@ export async function GET(request: NextRequest) {
           signOffData: node.signOffData,
           historyData: node.historyData,
           triggerData: node.triggerData,
+          selectedStandards: node.selectedStandards || [],
           createdAt: node.createdAt,
           updatedAt: node.updatedAt,
         }
@@ -265,7 +267,7 @@ export async function PUT(request: NextRequest) {
     await connectDB();
     
     const body = await request.json();
-    const { nodeId, userId, name, content, parentId, processMetadata, advancedDetails, signOffData, historyData, triggerData } = body;
+    const { nodeId, userId, name, content, parentId, processMetadata, advancedDetails, signOffData, historyData, triggerData, selectedStandards } = body;
     
     if (!nodeId || !userId) {
       return NextResponse.json({ error: 'nodeId and userId are required' }, { status: 400 });
@@ -285,6 +287,7 @@ export async function PUT(request: NextRequest) {
     if (signOffData !== undefined) updateData.signOffData = signOffData;
     if (historyData !== undefined) updateData.historyData = historyData;
     if (triggerData !== undefined) updateData.triggerData = triggerData;
+    if (selectedStandards !== undefined) updateData.selectedStandards = selectedStandards;
     
     if (advancedDetails !== undefined) {
       // Increment version number when advanced details are updated

@@ -261,7 +261,8 @@ const BpmnFileTree: React.FC<BpmnFileTreeProps> = ({
                 modifiedBy: '',
                 changeDescription: '',
                 createdBy: '',
-            }
+            },
+            selectedStandards: data.node.selectedStandards || []
           };
           
           console.log('Loading complete project data from BPMN nodes API:', completeProject);

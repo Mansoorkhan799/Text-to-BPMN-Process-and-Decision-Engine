@@ -57,6 +57,7 @@ const bpmnNodeSchema = new mongoose.Schema({
   signOffData: { type: signOffDataSchema }, // For files
   historyData: { type: historyDataSchema }, // For files
   triggerData: { type: triggerDataSchema }, // For files
+  selectedStandards: [{ type: String }], // Array of selected standard IDs
   archived: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },

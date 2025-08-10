@@ -58,6 +58,7 @@ interface AdvancedDetails {
 interface TableOptions {
     processTable: boolean;
     processDetailsTable: boolean;
+    frameworksTable: boolean;
     signOffTable: boolean;
     historyTable: boolean;
     triggerTable: boolean;
@@ -84,6 +85,14 @@ interface TriggerData {
     outputs: string;
 }
 
+interface Standard {
+    _id: string;
+    name: string;
+    code: string;
+    description: string;
+    category: string;
+}
+
 export function convertBpmnToLatex(
     bpmnXml: string, 
     fileName: string, 
@@ -92,7 +101,9 @@ export function convertBpmnToLatex(
     signOffData?: SignOffData,
     historyData?: HistoryData,
     triggerData?: TriggerData,
-    advancedDetails?: AdvancedDetails
+    advancedDetails?: AdvancedDetails,
+    selectedStandards?: string[],
+    standards?: Standard[]
 ): string {
     try {
         const parser = new XMLParser({
@@ -237,7 +248,7 @@ export function convertBpmnToLatex(
         }
         
         // Generate LaTeX code with table options
-        return generateLatexCodeWithTable(elements, flows, lanes, fileName, processMetadata, tableOptions, signOffData, historyData, triggerData, advancedDetails);
+        return generateLatexCodeWithTable(elements, flows, lanes, fileName, processMetadata, tableOptions, signOffData, historyData, triggerData, advancedDetails, selectedStandards, standards);
         
     } catch (error) {
         console.error('Error converting BPMN to LaTeX:', error);
@@ -397,7 +408,9 @@ function generateLatexCodeWithTable(
     signOffData?: SignOffData,
     historyData?: HistoryData,
     triggerData?: TriggerData,
-    advancedDetails?: AdvancedDetails
+    advancedDetails?: AdvancedDetails,
+    selectedStandards?: string[],
+    standards?: Standard[]
 ): string {
     // Extract process table data
     const tableData = extractProcessTableData(elements, lanes);
@@ -416,6 +429,7 @@ function generateLatexCodeWithTable(
     const options = tableOptions || {
         processTable: true,
         processDetailsTable: true,
+        frameworksTable: false,
         signOffTable: false,
         historyTable: false,
         triggerTable: false
@@ -482,6 +496,34 @@ function generateLatexCodeWithTable(
 \\hline
 \\end{tabular}
 `;
+    }
+
+    // Generate Frameworks and Standards Table if selected
+    if (options.frameworksTable && selectedStandards && standards && selectedStandards.length > 0) {
+        // Filter standards to get only the selected ones
+        const selectedStandardsData = standards.filter(standard => 
+            selectedStandards.includes(standard._id)
+        );
+
+        if (selectedStandardsData.length > 0) {
+            latex += `
+\\section{Frameworks and Standards}
+
+\\begin{tabular}{|l|l|}
+\\hline
+\\textbf{Reference} & \\textbf{Reference Description} \\\\
+\\hline
+`;
+            selectedStandardsData.forEach((standard) => {
+                const escapedName = standard.name.replace(/&/g, '\\&').replace(/_/g, '\\_').replace(/%/g, '\\%').replace(/\$/g, '\\$').replace(/#/g, '\\#');
+                const escapedDescription = standard.description.replace(/&/g, '\\&').replace(/_/g, '\\_').replace(/%/g, '\\%').replace(/\$/g, '\\$').replace(/#/g, '\\#');
+                latex += `${escapedName} & ${escapedDescription} \\\\
+\\hline
+`;
+            });
+            latex += `\\end{tabular}
+`;
+        }
     }
 
     // Generate Sign OFF Table if selected

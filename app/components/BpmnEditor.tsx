@@ -236,6 +236,7 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
     const [latexTableOptions, setLatexTableOptions] = useState({
         processTable: true,
         processDetailsTable: true,
+        frameworksTable: true,
         signOffTable: true,
         historyTable: true,
         triggerTable: true
@@ -259,6 +260,12 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
         inputs: '',
         outputs: ''
     });
+
+    // Add state for standards
+    const [standards, setStandards] = useState<Array<{_id: string, name: string, code: string, description: string, category: string}>>([]);
+    const [selectedStandards, setSelectedStandards] = useState<string[]>([]);
+    const [isEditingStandards, setIsEditingStandards] = useState(false);
+    const [standardsLoading, setStandardsLoading] = useState(false);
 
     // Check if any table is selected for LaTeX generation
     const isAnyTableSelected = Object.values(latexTableOptions).some(option => option);
@@ -1013,6 +1020,27 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
             const initialAdvancedDetails = createInitialAdvancedDetails(user);
             setAdditionalDetails(initialAdvancedDetails);
         }
+
+        // Load selected standards if available
+        console.log('Loading standards for project:', {
+            hasSelectedStandards: !!project.selectedStandards,
+            selectedStandardsLength: project.selectedStandards?.length || 0,
+            selectedStandards: project.selectedStandards
+        });
+        
+        if (project.selectedStandards && project.selectedStandards.length > 0) {
+            console.log('Setting selected standards:', project.selectedStandards);
+            setSelectedStandards(project.selectedStandards);
+        } else {
+            console.log('No selected standards found, resetting to empty array');
+            setSelectedStandards([]);
+        }
+        
+        // Always fetch standards for display if not already loaded or if we have selected standards
+        if (standards.length === 0 || (project.selectedStandards && project.selectedStandards.length > 0)) {
+            console.log('Fetching standards from API...');
+            fetchStandards();
+        }
         
         if (project.content && modeler) {
             modeler.importXML(project.content)
@@ -1069,6 +1097,9 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
         // Initialize advanced details for new project with creation information
         const initialAdvancedDetails = createInitialAdvancedDetails(user);
         setAdditionalDetails(initialAdvancedDetails);
+        
+        // Reset selected standards for new project
+        setSelectedStandards([]);
         
         if (modeler) {
             modeler.importXML(INITIAL_DIAGRAM).catch((err: any) => {
@@ -2790,7 +2821,9 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                 signOffData,
                 historyData,
                 triggerData,
-                additionalDetails
+                additionalDetails,
+                selectedStandards,
+                standards
             );
             
             // Create LaTeX project
@@ -3212,6 +3245,104 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
         }
     };
 
+    // Standards handlers
+    const handleToggleStandardsEdit = () => {
+        if (!isEditingStandards) {
+            // Load standards from database if not already loaded
+            if (standards.length === 0) {
+                fetchStandards();
+            }
+        }
+        setIsEditingStandards(!isEditingStandards);
+    };
+
+    const fetchStandards = async () => {
+        if (standardsLoading) return;
+        
+        setStandardsLoading(true);
+        try {
+            const response = await fetch('/api/standards');
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    setStandards(data.standards);
+                }
+            }
+        } catch (error) {
+            console.error('Error fetching standards:', error);
+            toast.error('Failed to fetch standards');
+        } finally {
+            setStandardsLoading(false);
+        }
+    };
+
+    const handleSaveStandards = async () => {
+        if (!user || !projectId) {
+            toast.error('No project selected');
+            return;
+        }
+
+        try {
+            console.log('Saving standards:', {
+                projectId,
+                selectedStandards,
+                selectedStandardsLength: selectedStandards.length
+            });
+
+            // Update version for standards change
+            updateVersionAndModificationDetails('advanced', 'Standards modified');
+            
+            const requestBody = {
+                nodeId: projectId,
+                userId: user.id,
+                selectedStandards: selectedStandards,
+                advancedDetails: additionalDetails
+            };
+            
+            console.log('Request body for saving standards:', requestBody);
+            
+            const response = await fetch('/api/bpmn-nodes', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(requestBody),
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                console.log('Standards save response:', result);
+                setIsEditingStandards(false);
+                
+                // Force refresh of standards display if standards list is loaded
+                if (standards.length === 0 && selectedStandards.length > 0) {
+                    fetchStandards();
+                }
+                
+                toast.success(`Standards saved successfully! (${selectedStandards.length} selected)`);
+            } else {
+                const errorText = await response.text();
+                console.error('Failed to save standards:', errorText);
+                toast.error('Failed to save standards');
+            }
+        } catch (error) {
+            console.error('Error saving standards:', error);
+            toast.error('Failed to save standards');
+        }
+    };
+
+    const handleCancelStandards = () => {
+        setIsEditingStandards(false);
+    };
+
+    const handleStandardToggle = (standardId: string) => {
+        setSelectedStandards(prev => 
+            prev.includes(standardId) 
+                ? prev.filter(id => id !== standardId)
+                : [...prev, standardId]
+        );
+    };
+
     return (
         <div className="flex h-full relative">
             {/* File Tree Sidebar - Left Side */}
@@ -3561,6 +3692,113 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                                         </button>
                                     )}
                                 </div>
+                            </div>
+                        </div>
+
+                        {/* Standards and Frameworks Section */}
+                        <div className="border-t border-gray-200 pt-6 mt-6">
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-gray-800">Frameworks and Standards</h3>
+                            </div>
+                            
+                            <div className="space-y-4">
+                                {isEditingStandards ? (
+                                    <>
+                                        {/* Standards Selection */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Select Standards
+                                            </label>
+                                            {standardsLoading ? (
+                                                <div className="text-gray-500 text-sm">Loading standards...</div>
+                                            ) : (
+                                                <div className="space-y-2 max-h-48 overflow-y-auto border border-gray-300 rounded-md p-3">
+                                                    {standards.map((standard) => (
+                                                        <label key={standard._id} className="flex items-center space-x-2 cursor-pointer hover:bg-gray-50 p-2 rounded">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedStandards.includes(standard._id)}
+                                                                onChange={() => handleStandardToggle(standard._id)}
+                                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                            />
+                                                            <div className="flex-1">
+                                                                <div className="font-medium text-sm text-gray-900">{standard.name}</div>
+                                                                <div className="text-xs text-gray-500">{standard.description}</div>
+                                                                <div className="text-xs text-gray-400">{standard.category}</div>
+                                                            </div>
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Action Buttons for Standards */}
+                                        <div className="flex space-x-2 pt-4">
+                                            <button
+                                                onClick={handleSaveStandards}
+                                                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                onClick={handleCancelStandards}
+                                                className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* Display Selected Standards */}
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Selected Standards ({selectedStandards.length})
+                                            </label>
+                                            {selectedStandards.length > 0 ? (
+                                                <div className="space-y-2">
+                                                    {standardsLoading ? (
+                                                        <div className="text-gray-500 text-sm bg-gray-50 px-3 py-2 rounded-md">
+                                                            Loading standards...
+                                                        </div>
+                                                    ) : standards.length > 0 ? (
+                                                        standards
+                                                            .filter(standard => selectedStandards.includes(standard._id))
+                                                            .map((standard) => (
+                                                                <div key={standard._id} className="bg-blue-50 border-l-4 border-blue-400 px-3 py-2 rounded-md">
+                                                                    <div className="font-medium text-sm text-blue-900">{standard.name}</div>
+                                                                    <div className="text-xs text-blue-700">{standard.description}</div>
+                                                                    <div className="text-xs text-blue-500 mt-1">{standard.category}</div>
+                                                                </div>
+                                                            ))
+                                                    ) : (
+                                                        <div className="text-gray-500 text-sm bg-gray-50 px-3 py-2 rounded-md">
+                                                            Standards selected but details not loaded yet.
+                                                            <button 
+                                                                onClick={fetchStandards}
+                                                                className="ml-2 text-blue-600 underline hover:text-blue-800"
+                                                            >
+                                                                Load standards
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="text-gray-500 text-sm bg-gray-50 px-3 py-2 rounded-md">
+                                                    No standards selected
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Edit Button for Standards */}
+                                        <button
+                                            onClick={handleToggleStandardsEdit}
+                                            className="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+                                        >
+                                            Edit
+                                        </button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -4123,6 +4361,19 @@ const BpmnEditor: React.FC<BpmnEditorProps> = ({ user: propUser, onCreateFileFro
                                                             className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                                         />
                                                         <span className="ml-2 text-sm font-medium text-gray-700">Process Details Table</span>
+                                                    </label>
+                                                    
+                                                    <label className="flex items-center">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={latexTableOptions.frameworksTable}
+                                                            onChange={(e) => setLatexTableOptions(prev => ({
+                                                                ...prev,
+                                                                frameworksTable: e.target.checked
+                                                            }))}
+                                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                                        />
+                                                        <span className="ml-2 text-sm font-medium text-gray-700">Frameworks and Standards Table</span>
                                                     </label>
                                                     
                                                     <label className="flex items-center">

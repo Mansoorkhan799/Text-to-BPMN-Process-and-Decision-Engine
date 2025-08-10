@@ -44,6 +44,7 @@ export interface BpmnNode {
     changeDescription: string;
     createdBy: string;
   };
+  selectedStandards?: string[];
   createdAt: Date;
   updatedAt: Date;
 }
@@ -307,7 +308,8 @@ export function convertNodeToProject(node: BpmnNode): BpmnProject {
       modifiedBy: (node as any).advancedDetails?.modifiedBy || '',
       changeDescription: '',
       createdBy: (node as any).advancedDetails?.createdBy || '',
-    }
+    },
+    selectedStandards: node.selectedStandards || []
   };
 }
 
@@ -325,5 +327,6 @@ export function convertProjectToNode(project: BpmnProject, parentId?: string): P
     historyData: project.historyData,
     triggerData: project.triggerData,
     advancedDetails: project.advancedDetails,
+    selectedStandards: project.selectedStandards,
   };
 } 

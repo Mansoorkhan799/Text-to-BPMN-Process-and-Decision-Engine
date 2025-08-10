@@ -44,6 +44,7 @@ export interface BpmnProject {
         changeDescription: string;
         createdBy: string;
     };
+    selectedStandards?: string[];
 }
 
 const BASE_STORAGE_KEY = 'bpmn_projects';
@@ -225,7 +226,8 @@ export async function getProjectByIdFromAPI(fileId: string): Promise<BpmnProject
         triggers: '',
         inputs: '',
         outputs: ''
-      }
+      },
+      selectedStandards: data.selectedStandards || []
     };
     
     console.log('Transformed project:', transformedProject);
@@ -279,7 +281,8 @@ export async function saveProjectToAPI(project: BpmnProject, userId?: string, ro
           inputs: '',
           outputs: ''
         },
-        advancedDetails: project.advancedDetails
+        advancedDetails: project.advancedDetails,
+        selectedStandards: project.selectedStandards || []
       })
     });
     
