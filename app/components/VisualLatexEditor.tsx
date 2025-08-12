@@ -1051,7 +1051,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     const [latexCode, setLatexCode] = useState<string>("");
 
     // State for preview
-    const [showPreview, setShowPreview] = useState<boolean>(true);
+    const [showPreview, setShowPreview] = useState<boolean>(false);
     const [dropdownPosition, setDropdownPosition] = useState<{ top: number; left: number } | null>(null);
 
     // State for rendered preview - set to true by default
@@ -1127,48 +1127,48 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
 
             switch (element.type) {
                 case 'heading-1':
-                    return <h1 {...baseProps} className="text-2xl font-bold mt-6 mb-4 text-gray-700">{children}</h1>;
+                    return <h1 {...baseProps} className="text-2xl font-bold mt-6 mb-4 text-black">{children}</h1>;
                 case 'heading-2':
-                    return <h2 {...baseProps} className="text-xl font-bold mt-5 mb-3 text-gray-700">{children}</h2>;
+                    return <h2 {...baseProps} className="text-xl font-bold mt-5 mb-3 text-black">{children}</h2>;
                 case 'heading-3':
-                    return <h3 {...baseProps} className="text-lg font-bold mt-4 mb-2 text-gray-700">{children}</h3>;
+                    return <h3 {...baseProps} className="text-lg font-bold mt-4 mb-2 text-black">{children}</h3>;
                 case 'heading-4':
-                    return <h4 {...baseProps} className="text-md font-bold mt-3 mb-2 text-gray-700">{children}</h4>;
+                    return <h4 {...baseProps} className="text-md font-bold mt-3 mb-2 text-black">{children}</h4>;
                 case 'heading-5':
-                    return <h5 {...baseProps} className="text-sm font-bold mt-2 mb-1 text-gray-700">{children}</h5>;
+                    return <h5 {...baseProps} className="text-sm font-bold mt-2 mb-1 text-black">{children}</h5>;
                 default:
-                    return <div {...baseProps} className="text-white">{children}</div>;
+                    return <div {...baseProps} className="text-black">{children}</div>;
             }
         }
         
         // Regular element rendering for non-protected elements
         switch (element.type) {
             case 'heading-1':
-                return <h1 {...attributes} className="text-2xl font-bold mt-6 mb-4 text-white">{children}</h1>;
+                return <h1 {...attributes} className="text-2xl font-bold mt-6 mb-4 text-black">{children}</h1>;
             case 'heading-2':
-                return <h2 {...attributes} className="text-xl font-bold mt-5 mb-3 text-white">{children}</h2>;
+                return <h2 {...attributes} className="text-xl font-bold mt-5 mb-3 text-black">{children}</h2>;
             case 'heading-3':
-                return <h3 {...attributes} className="text-lg font-bold mt-4 mb-2 text-white">{children}</h3>;
+                return <h3 {...attributes} className="text-lg font-bold mt-4 mb-2 text-black">{children}</h3>;
             case 'heading-4':
-                return <h4 {...attributes} className="text-md font-bold mt-3 mb-2 text-white">{children}</h4>;
+                return <h4 {...attributes} className="text-md font-bold mt-3 mb-2 text-black">{children}</h4>;
             case 'heading-5':
-                return <h5 {...attributes} className="text-sm font-bold mt-2 mb-1 text-white">{children}</h5>;
+                return <h5 {...attributes} className="text-sm font-bold mt-2 mb-1 text-black">{children}</h5>;
             case 'paragraph-specific':
-                return <p {...attributes} className="text-base font-semibold mt-3 mb-1 text-white">{children}</p>;
+                return <p {...attributes} className="text-base font-semibold mt-3 mb-1 text-black">{children}</p>;
             case 'subparagraph-specific':
-                return <p {...attributes} className="text-sm font-semibold mt-2 mb-1 text-white pl-4">{children}</p>;
+                return <p {...attributes} className="text-sm font-semibold mt-2 mb-1 text-black pl-4">{children}</p>;
             case 'document-title':
-                return <h1 {...attributes} className="text-3xl font-bold text-center mt-8 mb-4 text-white">{children}</h1>;
+                return <h1 {...attributes} className="text-3xl font-bold text-center mt-8 mb-4 text-black">{children}</h1>;
             case 'document-author':
-                return <p {...attributes} className="text-xl text-center mb-2 text-gray-300">{children}</p>;
+                return <p {...attributes} className="text-xl text-center mb-2 text-black">{children}</p>;
             case 'document-date':
-                return <p {...attributes} className="text-lg text-center mb-8 text-gray-300">{children}</p>;
+                return <p {...attributes} className="text-lg text-center mb-8 text-black">{children}</p>;
             case 'bullet-list':
-                return <ul {...attributes} className="list-disc ml-6 my-3 text-white">{children}</ul>;
+                return <ul {...attributes} className="list-disc ml-6 my-3 text-black">{children}</ul>;
             case 'numbered-list':
-                return <ol {...attributes} className="list-decimal ml-6 my-3 text-white">{children}</ol>;
+                return <ol {...attributes} className="list-decimal ml-6 my-3 text-black">{children}</ol>;
             case 'list-item':
-                return <li {...attributes} className="text-white">{children}</li>;
+                return <li {...attributes} className="text-black">{children}</li>;
             case 'equation':
                 return (
                     <div {...attributes} contentEditable={false} className="py-2 text-center">
@@ -1190,7 +1190,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                 className="max-w-full h-auto"
                                 alt={element.caption || "Image"}
                             />
-                            <div className="text-sm text-center text-gray-300 mt-1">{element.caption || ''}</div>
+                            <div className="text-sm text-center text-black mt-1">{element.caption || ''}</div>
                         </div>
                         <span style={{ userSelect: 'none' }}>{children}</span>
                     </div>
@@ -1198,17 +1198,17 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             case 'table':
                 return (
                     <div {...attributes} className="my-4 overflow-x-auto">
-                        <table className="border-collapse w-full text-white border border-gray-600 bg-gray-800">
+                        <table className="border-collapse w-full text-black border border-gray-300 bg-white">
                             <tbody>{children}</tbody>
                         </table>
                     </div>
                 );
             case 'table-row':
-                return <tr {...attributes} className="border-b border-gray-600 hover:bg-gray-700">{children}</tr>;
+                return <tr {...attributes} className="border-b border-gray-300 hover:bg-gray-100">{children}</tr>;
             case 'table-cell':
-                return <td {...attributes} className="border border-gray-600 px-3 py-2 text-sm align-top">{children}</td>;
+                return <td {...attributes} className="border border-gray-300 px-3 py-2 text-sm align-top text-black">{children}</td>;
             default:
-                return <p {...attributes} className="my-2 text-white">{children}</p>;
+                return <p {...attributes} className="my-2 text-black">{children}</p>;
         }
     }, [isProtectedElement, handleProtectedElementClick]);
 
@@ -1563,6 +1563,53 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                 }
             );
 
+            // Process LaTeX tables
+            processedContent = processedContent.replace(
+                /\\begin{tabular}([^}]*)\{([^}]*)\}([\s\S]*?)\\end{tabular}/g,
+                (match, tableSpec, columnSpec, tableContent) => {
+                    try {
+                        // Parse column specification
+                        const columns = columnSpec.split('|').filter((col: string) => col.trim() !== '');
+                        const columnCount = columns.length;
+                        
+                        // Clean up table content - handle various row separators
+                        let cleanTableContent = tableContent
+                            .replace(/\\hline/g, '') // Remove horizontal lines
+                            .replace(/\\\s*\\/g, '\\\\') // Fix broken row separators like \ \
+                            .replace(/\\\\\s*\\\\/g, '\\\\'); // Remove duplicate separators
+                        
+                        // Split table content into rows
+                        const rows = cleanTableContent.split('\\\\').filter((row: string) => row.trim() !== '');
+                        
+                        // Process each row
+                        const processedRows = rows.map((row: string) => {
+                            // Split row by & and filter out empty cells
+                            const cells = row.split('&').map(cell => cell.trim()).filter(cell => cell !== '');
+                            
+                            // Ensure we have the right number of cells
+                            while (cells.length < columnCount) {
+                                cells.push('');
+                            }
+                            
+                            // Create table row HTML
+                            return `<tr>${cells.map(cell => `<td style="border: 1px solid #ddd; padding: 8px; text-align: left;">${cell}</td>`).join('')}</tr>`;
+                        }).join('');
+                        
+                        // Create table HTML with proper styling
+                        return `
+                            <table style="border-collapse: collapse; width: 100%; margin: 20px 0; border: 1px solid #ddd;">
+                                <tbody>
+                                    ${processedRows}
+                                </tbody>
+                            </table>
+                        `;
+                    } catch (e) {
+                        console.error("Error processing table:", e);
+                        return `<div class="error">Error rendering table: ${e}</div>`;
+                    }
+                }
+            );
+
             // Pre-process all text formatting
             processedContent = processedContent
                 .replace(/\\textbf{([^}]*)}/g, '<span class="latex-bold">$1</span>')
@@ -1602,6 +1649,14 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     return match; // Return the original if there's an error
                 }
             });
+
+            // Process common LaTeX commands
+            processedContent = processedContent
+                .replace(/\\newline/g, '<br>')
+                .replace(/\\linebreak/g, '<br>')
+                .replace(/\\pagebreak/g, '<div style="page-break-before: always;"></div>')
+                .replace(/\\clearpage/g, '<div style="page-break-before: always;"></div>')
+                .replace(/\\newpage/g, '<div style="page-break-before: always;"></div>');
 
             // Combine the title block and processed content
             return titleBlock + processedContent;
@@ -2143,11 +2198,11 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
     };
 
     return (
-        <div className="flex flex-col h-full bg-[#1e1e1e] text-white">
+        <div className="flex flex-col h-full bg-white text-black">
             {/* Header */}
-            <div className="flex items-center px-4 py-2 bg-[#252a36] border-gray-700">
-                <h2 className="text-lg font-medium flex items-center mr-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-2">
+            <div className="flex items-center px-4 py-2 bg-gray-100 border-gray-300">
+                <h2 className="text-lg font-medium flex items-center mr-4 text-gray-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 mr-2 text-gray-800">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                         <polyline points="14 2 14 8 20 8"></polyline>
                         <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -2196,7 +2251,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             </div>
 
             {/* Main Toolbar */}
-            <div className="toolbar-container bg-[#252a36] border-gray-700 flex-shrink-0">
+            <div className="toolbar-container bg-gray-50 border-gray-300 flex-shrink-0">
                 {/* First row of toolbar */}
                 <div className="flex items-center px-3 py-2 flex-wrap gap-2">
                     {/* Text style dropdown */}
@@ -2205,7 +2260,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                             <div className="flex items-center">
                                 <select
                                     ref={textStyleDropdownRef}
-                                    className="w-32 bg-[#1a1f2e] text-white rounded py-1 pl-3 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-32 bg-white text-gray-800 border border-gray-300 rounded py-1 pl-3 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     defaultValue="paragraph"
                                     onChange={handleTextStyleChange}
                                 >
@@ -2221,7 +2276,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                     <option value="numbered-list">Numbered List</option>
                                 </select>
                                 {/* Dropdown arrow */}
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-600">
                                     <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                                         <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                                     </svg>
@@ -2232,10 +2287,10 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                             {showTextStyleDropdown && (
                                 <div
                                     ref={customDropdownRef}
-                                    className="absolute z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
+                                    className="absolute z-50 mt-1 w-64 bg-white border border-gray-300 rounded-md shadow-lg py-1 text-gray-800"
                                     style={{ left: '0', top: '100%' }}
                                 >
-                                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+/)</div>
+                                    <div className="py-1 px-2 text-xs text-gray-500 border-b border-gray-300">Text Style (Ctrl+/)</div>
                                     {textStyleOptions.map((option, index) => (
                                         <button
                                             key={index}
@@ -2243,7 +2298,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                                 dropdownItemsRef.current[index] = el;
                                                 return undefined;
                                             }}
-                                            className={`w-full text-left px-4 py-1 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
+                                            className={`w-full text-left px-4 py-1 hover:bg-gray-100 flex items-center ${selectedDropdownIndex === index ? 'bg-gray-100' : ''} ${option.className}`}
                                             onClick={() => applyTextStyle(option.value)}
                                         >
                                             {option.label}
@@ -2258,21 +2313,21 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     <div className="toolbar-group flex space-x-1">
                         <button
                             onClick={() => toggleFormat('bold')}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                             title="Bold"
                         >
                             <FaBold size={14} />
                         </button>
                         <button
                             onClick={() => toggleFormat('italic')}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                             title="Italic"
                         >
                             <FaItalic size={14} />
                         </button>
                         <button
                             onClick={() => toggleFormat('underline')}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                             title="Underline"
                         >
                             <FaUnderline size={14} />
@@ -2284,7 +2339,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                         <div className="relative">
                             <div className="flex items-center">
                                 <select
-                                    className="w-32 bg-[#1a1f2e] text-white rounded py-1 pl-8 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-32 bg-white text-gray-800 border border-gray-300 rounded py-1 pl-8 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     defaultValue="default"
                                     onChange={handleFontFamilyChange}
                                 >
@@ -2297,9 +2352,9 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                     <option value="'Trebuchet MS', sans-serif">Trebuchet</option>
                                 </select>
                                 <div className="pointer-events-none absolute left-2 flex items-center">
-                                    <FaFont size={14} className="text-white" />
+                                    <FaFont size={14} className="text-gray-600" />
                                 </div>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-600">
                                     <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                                         <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                                     </svg>
@@ -2312,14 +2367,14 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     <div className="toolbar-group flex space-x-1">
                         <button
                             onClick={() => insertList('bullet-list')}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                             title="Bullet List"
                         >
                             <FaList size={14} />
                         </button>
                         <button
                             onClick={() => insertList('numbered-list')}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                             title="Numbered List"
                         >
                             <FaListOl size={14} />
@@ -2337,7 +2392,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                                 });
                                 setShowTableGrid(true);
                             }}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                         title="Insert Table"
                     >
                         <FaTable size={14} />
@@ -2365,7 +2420,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     {/* Process Table button */}
                     <button
                         onClick={insertProcessTable}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                         title="Insert Process Management Table"
                     >
                         📋
@@ -2374,7 +2429,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     {/* Image button */}
                     <button
                         onClick={insertImage}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                         title="Insert Image"
                     >
                         <FaImage size={14} />
@@ -2383,7 +2438,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     {/* Equation button */}
                     <button
                         onClick={insertEquation}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
                         title="Insert Equation"
                     >
                         <FaRulerHorizontal size={14} />
@@ -2394,8 +2449,8 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                         onClick={() => setShowChangesTracker(true)}
                         className={`p-2 rounded transition ${
                             projectId 
-                                ? 'bg-[#1a1f2e] text-white hover:bg-[#2a304a]' 
-                                : 'bg-[#1a1f2e] text-gray-500 cursor-not-allowed'
+                                ? 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100' 
+                                : 'bg-gray-200 border border-gray-300 text-gray-400 cursor-not-allowed'
                         }`}
                         title={projectId ? "Track Changes History" : "No project selected"}
                         disabled={!projectId}
@@ -2410,32 +2465,23 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                         <button
                             onClick={() => {
                                 setShowPreview(!showPreview);
-                                if (showPreview) {
-                                    // When switching back to rendered preview, refresh it
+                                if (!showPreview) {
+                                    // When switching to rendered preview, refresh it
                                     setTimeout(() => compileDocument(), 0);
                                 }
                             }}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
-                            title="Toggle LaTeX Code Preview"
+                            className="p-2 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-100 transition"
+                            title={showPreview ? "Show Rendered Preview (PDF-like)" : "Show LaTeX Code"}
                         >
-                            <FaFileAlt size={14} />
+                            {showPreview ? <FaEye size={14} /> : <FaFileAlt size={14} />}
                         </button>
-                        <button
-                            onClick={() => {
-                                // Just refresh the preview
-                                compileDocument();
-                            }}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
-                            title="Refresh Preview"
-                        >
-                            <FaEye size={14} />
-                        </button>
+
                     </div>
 
                     {/* Compile controls */}
                     <div className="flex items-center space-x-3">
                         <div className="flex items-center space-x-2">
-                            <span className="text-white text-sm">Auto-compile</span>
+                            <span className="text-gray-700 text-sm">Auto-compile</span>
                             <Switch
                                 checked={autoCompile}
                                 onCheckedChange={setAutoCompile}
@@ -2444,8 +2490,8 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
 
                         {/* Auto-save indicator */}
                         {isSaving && (
-                            <div className="flex items-center space-x-2 text-green-400 text-sm">
-                                <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
+                            <div className="flex items-center space-x-2 text-green-600 text-sm">
+                                <div className="w-2 h-2 bg-green-600 rounded-full animate-pulse"></div>
                                 <span>Auto-saving...</span>
                             </div>
                         )}
@@ -2478,7 +2524,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
             <div className="flex flex-1 overflow-hidden">
                 {/* Visual Editor - always take up half the width */}
                 <div
-                    className="w-1/2 h-full overflow-auto p-6 bg-[#1e1e1e] text-white"
+                    className="w-1/2 h-full overflow-auto p-6 bg-white text-black"
                     ref={editorRef}
                 >
                     <Slate
@@ -2498,12 +2544,12 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                             placeholder="Start writing your document..."
                             className="min-h-full outline-none"
                             onKeyDown={handleKeyDown}
-                            style={{ caretColor: '#fff' }}
+                            style={{ caretColor: '#000' }}
                         />
                     </Slate>
                 </div>
 
-                {/* LaTeX Preview */}
+                {/* LaTeX Code Preview */}
                 {showPreview && (
                     <div className={`w-1/2 h-full border-l border-gray-700 overflow-auto p-4 ${editorTheme === 'dark' ? 'bg-[#1e1e1e] text-gray-300' : 'bg-gray-100 text-gray-800'}`}>
                         <pre className="whitespace-pre-wrap font-mono text-sm">
@@ -2512,7 +2558,7 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                     </div>
                 )}
 
-                {/* Rendered Preview - always visible */}
+                {/* Rendered Preview */}
                 {!showPreview && (
                     <div className="w-1/2 h-full border-l border-gray-700 overflow-auto" ref={previewRef}>
                         <div className="latex-preview bg-white h-full overflow-y-auto overflow-x-auto p-8 custom-scrollbar">
@@ -2620,6 +2666,28 @@ const VisualLatexEditor = ({ initialLatexContent, onContentChange, editorMode, o
                 
                 .latex-preview ul li, .latex-preview ol li {
                   margin-bottom: 4px;
+                }
+                
+                .latex-preview table {
+                  border-collapse: collapse;
+                  width: 100%;
+                  margin: 20px 0;
+                  border: 1px solid #ddd;
+                }
+                
+                .latex-preview table td {
+                  border: 1px solid #ddd;
+                  padding: 8px;
+                  text-align: left;
+                  vertical-align: top;
+                }
+                
+                .latex-preview table th {
+                  border: 1px solid #ddd;
+                  padding: 8px;
+                  text-align: left;
+                  font-weight: bold;
+                  background-color: #f8f9fa;
                 }
                 
                 .custom-scrollbar::-webkit-scrollbar {

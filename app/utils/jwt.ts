@@ -49,6 +49,7 @@ export interface JWTPayload {
   state?: string;
   country?: string;
   zipCode?: string;
+  profilePicture?: string;
 }
 
 export const createToken = (payload: JWTPayload): string => {
@@ -56,6 +57,14 @@ export const createToken = (payload: JWTPayload): string => {
 };
 
 export const verifyToken = (token: string): JWTPayload | null => {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JWTPayload;
+  } catch (error) {
+    return null;
+  }
+};
+
+export const verifyJWT = async (token: string): Promise<JWTPayload | null> => {
   try {
     return jwt.verify(token, JWT_SECRET) as JWTPayload;
   } catch (error) {

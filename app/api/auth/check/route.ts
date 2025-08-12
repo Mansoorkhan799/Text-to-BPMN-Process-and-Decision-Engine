@@ -31,7 +31,8 @@ export async function GET() {
         address: payload.address || '',
         state: payload.state || '',
         country: payload.country || '',
-        zipCode: payload.zipCode || ''
+        zipCode: payload.zipCode || '',
+        profilePicture: payload.profilePicture || ''
       }
     });
   } catch (error) {

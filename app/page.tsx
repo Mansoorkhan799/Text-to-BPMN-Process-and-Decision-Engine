@@ -14,6 +14,8 @@ import { User } from './types';
 import { RoleBasedUi, ROLES } from './utils/permissions';
 import dynamic from 'next/dynamic';
 import AdminFileManagement from './components/AdminFileManagement';
+import AIProcessGenerator from './components/AIProcessGenerator';
+import SettingsView from './components/SettingsView';
 
 // Import the BpmnEditor component dynamically to prevent SSR issues with browser APIs
 const BpmnEditor = dynamic(() => import('./components/BpmnEditor'), {
@@ -224,6 +226,12 @@ export default function Home() {
           </main>
         )}
 
+        {currentView === 'ai-process-generator' && (
+          <main className="flex-1 w-full h-full overflow-hidden">
+            <AIProcessGenerator />
+          </main>
+        )}
+
         {currentView === 'bpmn' && (
           <main className="flex-1 w-full h-full overflow-hidden">
             <BpmnEditor user={user} />
@@ -299,6 +307,12 @@ export default function Home() {
               }}
               showToast={true}
             />
+          </div>
+        )}
+
+        {currentView === 'settings' && (
+          <div className="flex-1 overflow-auto">
+            <SettingsView onNavigate={handleNavigation} />
           </div>
         )}
       </div>

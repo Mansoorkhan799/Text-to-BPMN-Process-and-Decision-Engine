@@ -4,6 +4,7 @@ import React, { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { User } from '@/app/types';
+import ProfilePictureUpload from './ProfilePictureUpload';
 
 interface ProfileFormProps {
   initialData?: User;
@@ -22,6 +23,8 @@ export default function ProfileForm({
 }: ProfileFormProps) {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
+  const [isUploadingPicture, setIsUploadingPicture] = useState(false);
+  const [selectedPicture, setSelectedPicture] = useState<File | null>(null);
   const [formData, setFormData] = useState<Partial<User>>({
     name: '',
     email: '',
@@ -46,6 +49,34 @@ export default function ProfileForm({
     }
   }, [initialData]);
 
+  const handlePictureChange = (file: File) => {
+    setSelectedPicture(file);
+  };
+
+  const uploadProfilePicture = async (file: File): Promise<string | null> => {
+    try {
+      const formData = new FormData();
+      formData.append('profilePicture', file);
+
+      const response = await fetch('/api/user/profile-picture', {
+        method: 'POST',
+        body: formData,
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.profilePicture;
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to upload profile picture');
+      }
+    } catch (error) {
+      console.error('Error uploading profile picture:', error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     
@@ -57,14 +88,45 @@ export default function ProfileForm({
     setIsLoading(true);
     
     try {
+      // Upload profile picture first if selected
+      let profilePictureUrl: string | null = null;
+      if (selectedPicture) {
+        setIsUploadingPicture(true);
+        try {
+          profilePictureUrl = await uploadProfilePicture(selectedPicture);
+          toast.success('Profile picture uploaded successfully');
+        } catch (error: any) {
+          toast.error(`Failed to upload profile picture: ${error.message}`);
+          setIsLoading(false);
+          setIsUploadingPicture(false);
+          return;
+        } finally {
+          setIsUploadingPicture(false);
+        }
+      }
+
+      // Prepare complete profile data including profile picture
+      const completeProfileData = {
+        ...formData,
+        profilePicture: profilePictureUrl || initialData?.profilePicture || ''
+      };
+
+      // Update profile information with profile picture
       if (onSubmit) {
-        await onSubmit(formData);
+        await onSubmit(completeProfileData);
         if (showSuccessToast) {
           toast.success('Profile updated successfully');
         }
       } else {
         console.log('No onSubmit handler provided');
       }
+
+      // Trigger profile update event to refresh the profile display
+      window.dispatchEvent(new CustomEvent('profile-updated', {
+        detail: {
+          user: completeProfileData
+        }
+      }));
     } catch (error) {
       console.error('Error updating profile:', error);
       toast.error('Failed to update profile');
@@ -82,8 +144,20 @@ export default function ProfileForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="bg-white rounded-lg shadow-md p-4">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Profile Picture Upload Section */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Profile Picture</h3>
+        <ProfilePictureUpload
+          currentPicture={initialData?.profilePicture}
+          onPictureChange={handlePictureChange}
+          disabled={isLoading || isUploadingPicture}
+        />
+      </div>
+
+      {/* Profile Information Section */}
+      <div className="bg-white rounded-lg shadow-md p-6">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Profile Information</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -205,10 +279,10 @@ export default function ProfileForm({
         )}
         <button
           type="submit"
-          disabled={isLoading}
+          disabled={isLoading || isUploadingPicture}
           className="py-1.5 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
         >
-          {isLoading ? 'Saving...' : 'Save Changes'}
+          {isLoading || isUploadingPicture ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
     </form>

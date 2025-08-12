@@ -69,6 +69,11 @@ export async function GET(request: NextRequest) {
         // Link existing account with Google
         existingEmailUser.googleId = userData.id;
         existingEmailUser.picture = userData.picture || existingEmailUser.picture;
+        
+        // If they don't have a profilePicture, use the Google picture
+        if (!existingEmailUser.profilePicture && userData.picture) {
+          existingEmailUser.profilePicture = userData.picture;
+        }
 
         // If they already have an authType, add Google as another method
         // but don't change their existing role
@@ -88,6 +93,7 @@ export async function GET(request: NextRequest) {
           password: Math.random().toString(36).slice(-10) + Math.random().toString(36).slice(-10),
           googleId: userData.id,
           picture: userData.picture,
+          profilePicture: userData.picture, // Set profilePicture to Google picture for new users
           role: 'user', // Default role for new users
           authType: 'google'
         });
@@ -97,6 +103,12 @@ export async function GET(request: NextRequest) {
       // User found by Google ID - update their profile if needed
       user.name = userData.name || user.name;
       user.picture = userData.picture || user.picture;
+      
+      // Update profilePicture if Google picture is newer or user doesn't have one
+      if (userData.picture && (!user.profilePicture || userData.picture !== user.picture)) {
+        user.profilePicture = userData.picture;
+      }
+      
       await user.save();
       console.log('✓ Existing Google user updated:', user._id);
     }
@@ -113,6 +125,7 @@ export async function GET(request: NextRequest) {
         state: user.state || '',
         country: user.country || '',
         zipCode: user.zipCode || '',
+        profilePicture: user.profilePicture || user.picture || '', // Include profile picture or Google picture
         authType: 'google'
       },
       JWT_SECRET,

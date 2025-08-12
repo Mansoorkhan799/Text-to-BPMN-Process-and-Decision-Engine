@@ -44,6 +44,11 @@ const userSchema = new mongoose.Schema({
     type: String,
     trim: true,
   },
+  // Profile picture
+  profilePicture: {
+    type: String,
+    trim: true,
+  },
   // Authentication method
   authType: {
     type: String,

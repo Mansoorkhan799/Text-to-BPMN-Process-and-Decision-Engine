@@ -19,6 +19,17 @@ const nextConfig = {
     // Disable ESLint during build to avoid configuration issues
     eslint: {
         ignoreDuringBuilds: true,
+    },
+    // Configure allowed image domains for Next.js Image component
+    images: {
+        remotePatterns: [
+            {
+                protocol: 'https',
+                hostname: 'lh3.googleusercontent.com',
+                port: '',
+                pathname: '/**',
+            },
+        ],
     }
 };
 

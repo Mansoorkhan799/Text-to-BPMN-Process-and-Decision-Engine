@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { IconType } from 'react-icons';
-import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp, HiBell, HiOutlineFolderOpen } from 'react-icons/hi';
+import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp, HiBell, HiOutlineFolderOpen, HiOutlineSparkles, HiOutlineCog } from 'react-icons/hi';
 import { SiLatex } from 'react-icons/si';
 import { useState, useEffect } from 'react';
 import { ROLES } from '../utils/permissions';
@@ -43,7 +43,7 @@ const SideMenu: React.FC<SideMenuProps> = ({
 }) => {
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [pendingNotifications, setPendingNotifications] = useState(0);
   const [notificationCounts, setNotificationCounts] = useState<NotificationCounts>({
     pending: 0,
@@ -106,6 +106,13 @@ const SideMenu: React.FC<SideMenuProps> = ({
       icon: <HiOutlineViewGrid className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
       onClick: () => onNavigate('dashboard'),
       view: 'dashboard',
+      requiredRole: ROLES.USER // Everyone can access
+    },
+    {
+      label: 'AI Process Generator',
+      icon: <HiOutlineSparkles className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+      onClick: () => onNavigate('ai-process-generator'),
+      view: 'ai-process-generator',
       requiredRole: ROLES.USER // Everyone can access
     },
     {
@@ -185,6 +192,13 @@ const SideMenu: React.FC<SideMenuProps> = ({
       view: 'profile',
       requiredRole: ROLES.USER // Everyone can access
     },
+    {
+      label: 'Settings',
+      icon: <HiOutlineCog className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+      onClick: () => onNavigate('settings'),
+      view: 'settings',
+      requiredRole: ROLES.USER // Everyone can access
+    },
   ];
 
   const handleSignOut = async () => {
@@ -205,82 +219,105 @@ const SideMenu: React.FC<SideMenuProps> = ({
     }
   };
 
-  // Get user initials
-  const getUserInitials = () => {
-    if (!userName) return userEmail ? userEmail[0].toUpperCase() : 'U';
 
-    const names = userName.split(' ');
-    if (names.length > 1) {
-      return `${names[0][0]}${names[names.length - 1][0]}`.toUpperCase();
-    }
-    return userName.charAt(0).toUpperCase();
-  };
-
-  const formatDisplayName = () => {
-    if (userName) return userName;
-    return userEmail ? userEmail.split('@')[0] : 'User';
-  };
 
   return (
     <div
-      className={`flex flex-col h-screen bg-[#1a1f2e] text-white transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'
+      className={`flex flex-col h-screen bg-white text-gray-800 border-r border-gray-200 shadow-lg transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-64'
         }`}
     >
       <div className="flex flex-col flex-grow p-4 space-y-2">
         {menuItems
           .filter(item => hasAccess(item.requiredRole) && (item.shouldShow !== false))
-          .map((item, index) => (
+          .map((item, index) => {
+            const isAIGenerator = item.view === 'ai-process-generator';
+            
+            return (
             <button
               key={index}
               onClick={item.onClick}
-              className={`flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'
-                } px-3 py-3 rounded-lg transition-colors ${currentView === item.view
-                  ? 'bg-blue-600 shadow-lg'
-                  : 'hover:bg-blue-600/50'
-                }`}
-            >
+                className={`relative flex items-center ${isCollapsed ? 'justify-center' : 'gap-4'
+                  } px-3 py-3 rounded-lg transition-all duration-300 ${
+                    isAIGenerator 
+                      ? currentView === item.view
+                        ? 'bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 text-white shadow-lg shadow-blue-500/20'
+                        : 'bg-gradient-to-r from-blue-500/70 via-purple-500/70 to-pink-500/70 text-white hover:from-blue-600 hover:via-purple-600 hover:to-pink-600 shadow-md shadow-blue-400/10 hover:shadow-lg hover:shadow-blue-500/25'
+                      : currentView === item.view
+                        ? 'bg-blue-600 text-white shadow-lg'
+                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'
+                  }`}
+              >
+                {isAIGenerator && (
+                  <div className="absolute inset-0 bg-gradient-to-r from-blue-400/5 via-purple-400/5 to-pink-400/5 rounded-lg"></div>
+                )}
+                <div className={isAIGenerator ? 'relative z-10' : ''}>
               {item.icon}
+                </div>
               {!isCollapsed && (
-                <>
-                  <span className="font-medium">{item.label}</span>
+                  <div className={isAIGenerator ? 'relative z-10' : ''}>
+                    <span className={`font-medium ${isAIGenerator ? 'font-bold' : ''}`}>
+                      {item.label}
+                    </span>
                   {item.badge}
-                </>
+                  </div>
               )}
             </button>
-          ))}
+            );
+          })}
       </div>
 
-      <div className="relative mx-4 mb-4">
+      <div className="mx-4 mb-4">
         <button
-          onClick={() => setShowProfileMenu(!showProfileMenu)}
-          className={`flex items-center w-full px-3 py-3 rounded-lg hover:bg-blue-600/50 transition-colors ${isCollapsed ? 'justify-center' : 'justify-between'
-            }`}
+          onClick={() => setShowSignOutConfirm(true)}
+          disabled={isSigningOut}
+          className={`flex items-center w-full px-3 py-3 rounded-lg hover:bg-gray-100 transition-colors text-gray-700 hover:text-gray-900 ${
+            isCollapsed ? 'justify-center' : 'gap-3'
+          }`}
         >
-          {isCollapsed ? (
-            <HiOutlineUser className="w-6 h-6" />
-          ) : (
+          <HiOutlineLogout className={`${isCollapsed ? 'w-6 h-6' : 'w-5 h-5'}`} />
+          {!isCollapsed && (
             <>
-              <span className="font-medium">{formatDisplayName()}</span>
-              <HiChevronUp
-                className={`transition-transform ${showProfileMenu ? 'rotate-180' : ''}`}
-              />
+              <span className="font-medium">Sign Out</span>
+              {isSigningOut && (
+                <div className="animate-spin ml-2 rounded-full h-4 w-4 border-2 border-gray-600 border-t-transparent" />
+              )}
             </>
           )}
         </button>
 
-        {showProfileMenu && (
-          <div className="absolute bottom-full left-0 w-full mb-1 bg-[#2a304a] rounded-lg shadow-lg overflow-hidden">
-            <button
-              onClick={handleSignOut}
-              disabled={isSigningOut}
-              className="flex items-center w-full px-3 py-3 hover:bg-blue-600/50 transition-colors gap-3"
-            >
-              <HiOutlineLogout />
-              <span className="font-medium">Sign Out</span>
-              {isSigningOut && (
-                <div className="animate-spin ml-2 rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-              )}
-            </button>
+        {/* Sign Out Confirmation Popup */}
+        {showSignOutConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full mx-4">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0">
+                  <HiOutlineLogout className="w-8 h-8 text-red-500" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium text-gray-900">Sign Out</h3>
+                  <p className="text-sm text-gray-500">Are you sure you want to sign out?</p>
+                </div>
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowSignOutConfirm(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowSignOutConfirm(false);
+                    handleSignOut();
+                  }}
+                  disabled={isSigningOut}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-colors"
+                >
+                  {isSigningOut ? 'Signing Out...' : 'Yes, Sign Out'}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

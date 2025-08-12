@@ -23,7 +23,7 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const { name, phoneNumber, address, state, country, zipCode } = await request.json();
+    const { name, phoneNumber, address, state, country, zipCode, profilePicture } = await request.json();
 
     // Connect to MongoDB
     await connectDB();
@@ -45,6 +45,11 @@ export async function PUT(request: NextRequest) {
     user.country = country !== undefined ? country : user.country;
     user.zipCode = zipCode !== undefined ? zipCode : user.zipCode;
     
+    // Update profile picture if provided
+    if (profilePicture !== undefined) {
+      user.profilePicture = profilePicture;
+    }
+    
     await user.save();
 
     // Create a new JWT with updated user information
@@ -58,7 +63,8 @@ export async function PUT(request: NextRequest) {
         address: user.address,
         state: user.state,
         country: user.country,
-        zipCode: user.zipCode
+        zipCode: user.zipCode,
+        profilePicture: user.profilePicture
       },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '1d' }
@@ -77,7 +83,8 @@ export async function PUT(request: NextRequest) {
           address: user.address,
           state: user.state,
           country: user.country,
-          zipCode: user.zipCode
+          zipCode: user.zipCode,
+          profilePicture: user.profilePicture
         }
       },
       { status: 200 }

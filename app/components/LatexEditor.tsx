@@ -2874,8 +2874,8 @@ ${latex}
 
     return (
         <div className={`latex-editor-container flex flex-col h-full ${isPreviewFullscreen ? 'fullscreen' : ''}`}>
-            <div className="py-2 px-4 flex items-center bg-[#252a36]">
-                <h2 className="text-lg font-semibold text-white flex items-center mr-4">
+            <div className="py-2 px-4 flex items-center bg-white border-b border-gray-200">
+                <h2 className="text-lg font-semibold text-gray-800 flex items-center mr-4">
                     <FaCode className="mr-2" /> Code Editor
                 </h2>
 
@@ -2927,7 +2927,7 @@ ${latex}
             </div>
 
             {/* Main Toolbar */}
-            <div className="toolbar-container bg-[#252a36] border-gray-700 flex-shrink-0">
+            <div className="toolbar-container bg-white border-b border-gray-200 flex-shrink-0">
                 {/* First row of toolbar */}
                 <div className="flex items-center px-3 py-2 flex-wrap gap-2">
                     {/* Text style dropdown */}
@@ -2936,7 +2936,7 @@ ${latex}
                             <div className="flex items-center">
                                 <select
                                     ref={textStyleDropdownRef}
-                                    className="w-32 bg-[#1a1f2e] text-white rounded py-1 pl-3 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-32 bg-white text-gray-800 border border-gray-300 rounded py-1 pl-3 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     defaultValue="normal"
                                     onChange={handleTextStyleChange}
                                     onClick={() => {
@@ -2960,7 +2960,7 @@ ${latex}
                                     <option value="numbered-list">Numbered List</option>
                                 </select>
                                 {/* Dropdown arrow */}
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-800">
                                     <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                                         <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                                     </svg>
@@ -2971,13 +2971,13 @@ ${latex}
                             {showTextStyleDropdown && dropdownPosition && (
                                 <div
                                     ref={customDropdownRef}
-                                    className="fixed z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
+                                    className="fixed z-50 mt-1 w-64 bg-white border border-gray-300 rounded-md shadow-lg py-1 text-gray-800"
                                     style={{
                                         top: `${dropdownPosition.top}px`,
                                         left: `${dropdownPosition.left}px`,
                                     }}
                                 >
-                                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+/)</div>
+                                    <div className="py-1 px-2 text-xs text-gray-500 border-b border-gray-300">Text Style (Ctrl+/)</div>
                                     {textStyleOptions.map((option, index) => (
                                         <button
                                             key={index}
@@ -2985,7 +2985,7 @@ ${latex}
                                                 dropdownItemsRef.current[index] = el;
                                                 return undefined;
                                             }}
-                                            className={`w-full text-left px-4 py-1 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
+                                            className={`w-full text-left px-4 py-1 hover:bg-gray-100 flex items-center ${selectedDropdownIndex === index ? 'bg-gray-100' : ''} ${option.className}`}
                                             onClick={() => applyTextStyleFromDropdown(option.value)}
                                         >
                                             {option.label}
@@ -3000,21 +3000,21 @@ ${latex}
                     <div className="toolbar-group flex space-x-1">
                         <button
                             onClick={insertBold}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
                             title="Bold"
                         >
                             <FaBold size={14} />
                         </button>
                         <button
                             onClick={insertItalic}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
                             title="Italic"
                         >
                             <FaItalic size={14} />
                         </button>
                         <button
                             onClick={() => insertTextAtCursor("\\underline{", "}")}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
                             title="Underline"
                         >
                             <FaUnderline size={14} />
@@ -3026,7 +3026,7 @@ ${latex}
                         <div className="relative">
                             <div className="flex items-center">
                                 <select
-                                    className="w-32 bg-[#1a1f2e] text-white rounded py-1 pl-8 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    className="w-32 bg-white text-gray-800 border border-gray-300 rounded py-1 pl-8 pr-8 appearance-none focus:outline-none focus:ring-1 focus:ring-blue-500"
                                     defaultValue="font"
                                     onChange={handleFontStyleChange}
                                     onClick={() => {
@@ -3048,9 +3048,9 @@ ${latex}
                                     <option value="trebuchet">Trebuchet</option>
                                 </select>
                                 <div className="pointer-events-none absolute left-2 flex items-center">
-                                    <FaFont size={14} className="text-white" />
+                                    <FaFont size={14} className="text-gray-800" />
                                 </div>
-                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-white">
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-800">
                                     <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                                         <path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z" />
                                     </svg>
@@ -3063,14 +3063,14 @@ ${latex}
                     <div className="toolbar-group flex space-x-1">
                         <button
                             onClick={() => insertList('bullet')}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
                             title="Bullet List"
                         >
                             <FaList size={14} />
                         </button>
                         <button
                             onClick={() => insertList('numbered')}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 transition border border-gray-300"
                             title="Numbered List"
                         >
                             <FaListOl size={14} />
@@ -3088,7 +3088,7 @@ ${latex}
                                 });
                                 setShowTableGrid(true);
                             }}
-                            className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                            className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 transition"
                             title="Insert Table"
                         >
                             <FaTable size={14} />
@@ -3116,7 +3116,7 @@ ${latex}
                     {/* Process Table button */}
                     <button
                         onClick={insertProcessTable}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 transition"
                         title="Insert Process Management Table"
                     >
                         📋
@@ -3125,7 +3125,7 @@ ${latex}
                     {/* Template button */}
                     <button
                         onClick={() => insertLatexTemplate()}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 transition"
                         title="Insert LaTeX Template"
                     >
                         📄
@@ -3134,7 +3134,7 @@ ${latex}
                     {/* Image insertion */}
                     <button
                         onClick={insertImage}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 transition"
                         title="Insert Image"
                     >
                         <FaImage size={14} />
@@ -3143,7 +3143,7 @@ ${latex}
                     {/* Equation insertion - new button */}
                     <button
                         onClick={insertEquation}
-                        className="p-2 rounded bg-[#1a1f2e] text-white hover:bg-[#2a304a] transition"
+                        className="p-2 rounded bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 transition"
                         title="Insert Equation"
                     >
                         <FaRulerHorizontal size={14} />
@@ -3154,8 +3154,8 @@ ${latex}
                         onClick={() => setShowChangesTracker(true)}
                         className={`p-2 rounded transition ${
                             projectId 
-                                ? 'bg-[#1a1f2e] text-white hover:bg-[#2a304a]' 
-                                : 'bg-[#1a1f2e] text-gray-500 cursor-not-allowed'
+                                ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300' 
+                                : 'bg-gray-50 text-gray-400 cursor-not-allowed border border-gray-200'
                         }`}
                         title={projectId ? "Track Changes History" : "No project selected"}
                         disabled={!projectId}
@@ -3259,13 +3259,13 @@ ${latex}
             {showTextStyleDropdown && dropdownPosition && (
                 <div
                     ref={customDropdownRef}
-                    className="fixed z-50 mt-1 w-64 bg-[#1a1f2e] border border-gray-700 rounded-md shadow-lg py-1 text-white"
+                    className="fixed z-50 mt-1 w-64 bg-white border border-gray-300 rounded-md shadow-lg py-1 text-gray-800"
                     style={{
                         top: `${dropdownPosition.top}px`,
                         left: `${dropdownPosition.left}px`,
                     }}
                 >
-                    <div className="py-1 px-2 text-xs text-gray-400 border-b border-gray-700">Text Style (Ctrl+/)</div>
+                    <div className="py-1 px-2 text-xs text-gray-500 border-b border-gray-300">Text Style (Ctrl+/)</div>
                     {textStyleOptions.map((option, index) => (
                         <button
                             key={index}
@@ -3273,7 +3273,7 @@ ${latex}
                                 dropdownItemsRef.current[index] = el;
                                 return undefined;
                             }}
-                            className={`w-full text-left px-4 py-1 hover:bg-[#2a304a] flex items-center ${selectedDropdownIndex === index ? 'bg-[#2a304a]' : ''} ${option.className}`}
+                            className={`w-full text-left px-4 py-1 hover:bg-gray-100 flex items-center ${selectedDropdownIndex === index ? 'bg-gray-100' : ''} ${option.className}`}
                             onClick={() => applyTextStyleFromDropdown(option.value)}
                         >
                             {option.label}

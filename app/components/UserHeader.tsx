@@ -2,12 +2,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 interface User {
   id: string;
   email: string;
   name?: string;
   role?: string;
+  profilePicture?: string;
 }
 
 export default function UserHeader() {
@@ -98,15 +100,32 @@ export default function UserHeader() {
   };
 
   return (
-    <div className="h-14 flex items-center justify-end px-4 border-b bg-white">
+    <div className="h-12 flex items-center justify-end px-4 bg-white">
       {user && (
         <div className="flex items-center">
-          <p className="text-base font-medium mr-2">
-            {user.name ? formatName(user.name) : user.email.split('@')[0]}
-          </p>
-          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${getRoleBadgeColor()}`}>
-            {user.role || 'user'}
-          </span>
+          <div className="border-2 border-gray-300 rounded-full px-2 py-1 mr-2 flex items-center">
+            <div className="w-8 h-8 bg-blue-500 rounded-full mr-2 flex items-center justify-center border-2 border-gray-300 overflow-hidden">
+              {user.profilePicture ? (
+                <Image
+                  src={user.profilePicture}
+                  alt="Profile Picture"
+                  width={32}
+                  height={32}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <span className="text-white text-sm font-bold">
+                  {getInitials()}
+                </span>
+              )}
+            </div>
+            <p className="text-xs font-medium mr-2">
+              {user.name ? formatName(user.name) : user.email.split('@')[0]}
+            </p>
+            <span className={`inline-block px-1.5 py-0.5 rounded-full text-xs font-medium capitalize ${getRoleBadgeColor()}`}>
+              {user.role || 'user'}
+            </span>
+          </div>
         </div>
       )}
     </div>

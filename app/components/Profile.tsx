@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { User } from '@/app/types';
 
 interface ProfileProps {
@@ -63,6 +64,16 @@ export default function Profile({ showEditButton = true, onEditClick }: ProfileP
     }
   };
 
+  const getInitials = (name?: string, email?: string) => {
+    if (name) {
+      return name.charAt(0).toUpperCase();
+    }
+    if (email) {
+      return email.charAt(0).toUpperCase();
+    }
+    return 'U';
+  };
+
   if (isLoading) {
     return <div className="flex items-center justify-center h-full">Loading profile...</div>;
   }
@@ -75,18 +86,30 @@ export default function Profile({ showEditButton = true, onEditClick }: ProfileP
     <div className="bg-white rounded-lg shadow-md overflow-hidden">
       {/* Profile Header - decreased height */}
       <div className="relative bg-gradient-to-r from-blue-500 to-indigo-600 h-24">
-        {/* Profile avatar overlay - adjusted position */}
-        <div className="absolute -bottom-8 left-8">
-          <div className="h-16 w-16 rounded-full bg-white p-1 shadow-lg">
-            <div className="h-full w-full rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold text-xl uppercase">
-              {user.name ? user.name.charAt(0) : user.email.charAt(0)}
-            </div>
+        {/* Profile avatar overlay - adjusted position and increased size */}
+        <div className="absolute -bottom-12 left-8">
+          <div className="h-24 w-24 rounded-full bg-white p-1 shadow-lg">
+            {user.profilePicture ? (
+              <div className="h-full w-full rounded-full overflow-hidden">
+                <Image
+                  src={user.profilePicture}
+                  alt="Profile Picture"
+                  width={96}
+                  height={96}
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            ) : (
+              <div className="h-full w-full rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600 font-semibold text-3xl uppercase">
+                {getInitials(user.name, user.email)}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Profile Info - more compact */}
-      <div className="pt-10 pb-6 px-8">
+      {/* Profile Info - adjusted padding to accommodate larger picture */}
+      <div className="pt-14 pb-6 px-8">
         <div className="flex justify-between items-start">
           <div>
             <h1 className="text-xl font-bold text-gray-800">{user.name || user.email.split('@')[0]}</h1>

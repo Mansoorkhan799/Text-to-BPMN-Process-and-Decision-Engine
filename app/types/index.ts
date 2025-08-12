@@ -8,4 +8,5 @@ export interface User {
   state?: string;
   country?: string;
   zipCode?: string;
+  profilePicture?: string;
 } 

@@ -54,7 +54,8 @@ export async function POST(request: NextRequest) {
         address: user.address || '',
         state: user.state || '',
         country: user.country || '',
-        zipCode: user.zipCode || ''
+        zipCode: user.zipCode || '',
+        profilePicture: user.profilePicture || ''
       },
       process.env.JWT_SECRET!,
       { expiresIn: '1d' }
@@ -74,7 +75,8 @@ export async function POST(request: NextRequest) {
           address: user.address || '',
           state: user.state || '',
           country: user.country || '',
-          zipCode: user.zipCode || ''
+          zipCode: user.zipCode || '',
+          profilePicture: user.profilePicture || ''
         }
       },
       { status: 200 }
