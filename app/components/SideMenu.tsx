@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { IconType } from 'react-icons';
-import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp, HiBell, HiOutlineFolderOpen, HiOutlineSparkles, HiOutlineCog } from 'react-icons/hi';
+import { HiOutlineViewGrid, HiOutlineUsers, HiOutlineLogout, HiOutlineUser, HiChevronUp, HiBell, HiOutlineFolderOpen, HiOutlineSparkles, HiOutlineCog, HiOutlineChartBar, HiOutlineDocumentText } from 'react-icons/hi';
 import { SiLatex } from 'react-icons/si';
 import { useState, useEffect } from 'react';
 import { ROLES } from '../utils/permissions';
@@ -108,39 +108,53 @@ const SideMenu: React.FC<SideMenuProps> = ({
       view: 'dashboard',
       requiredRole: ROLES.USER // Everyone can access
     },
-    {
-      label: 'AI Process Generator',
-      icon: <HiOutlineSparkles className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
-      onClick: () => onNavigate('ai-process-generator'),
-      view: 'ai-process-generator',
-      requiredRole: ROLES.USER // Everyone can access
-    },
-    {
-      label: 'BPMN Editor',
-      icon: <svg className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M21 7V17C21 18.1046 20.1046 19 19 19H5C3.89543 19 3 18.1046 3 17V7C3 5.89543 3.89543 5 5 5H19C20.1046 5 21 5.89543 21 7Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 2" />
-        <rect x="7" y="9" width="10" height="6" rx="1" stroke="currentColor" strokeWidth="2" />
-      </svg>,
-      onClick: () => onNavigate('bpmn'),
-      view: 'bpmn',
-      requiredRole: ROLES.USER // Everyone can access
-    },
-    {
-      label: 'LaTeX Editor',
-      icon: <SiLatex className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
-      onClick: () => onNavigate('latex'),
-      view: 'latex',
-      requiredRole: ROLES.USER // Everyone can access
-    },
-    // Admin-only: File Management (combines BPMN + LaTeX)
-    {
-      label: 'File Management',
-      icon: <HiOutlineFolderOpen className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
-      onClick: () => onNavigate('admin-file-management'),
-      view: 'admin-file-management',
-      requiredRole: ROLES.ADMIN,
-      shouldShow: userRole === ROLES.ADMIN,
-    },
+         {
+       label: 'AI Process Generator',
+       icon: <HiOutlineSparkles className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+       onClick: () => onNavigate('ai-process-generator'),
+       view: 'ai-process-generator',
+       requiredRole: ROLES.USER // Everyone can access
+     },
+     {
+       label: 'BPMN Editor',
+       icon: <svg className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+         <path d="M21 7V17C21 18.1046 20.1046 19 19 19H5C3.89543 19 3 18.1046 3 17V7C3 5.89543 3.89543 5 5 5H19C20.1046 5 21 5.89543 21 7Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeDasharray="4 2" />
+         <rect x="7" y="9" width="10" height="6" rx="1" stroke="currentColor" strokeWidth="2" />
+       </svg>,
+       onClick: () => onNavigate('bpmn'),
+       view: 'bpmn',
+       requiredRole: ROLES.USER // Everyone can access
+     },
+     {
+       label: 'LaTeX Editor',
+       icon: <SiLatex className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+       onClick: () => onNavigate('latex'),
+       view: 'latex',
+       requiredRole: ROLES.USER // Everyone can access
+     },
+     // Admin-only: File Management (combines BPMN + LaTeX)
+     {
+       label: 'File Management',
+       icon: <HiOutlineFolderOpen className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+       onClick: () => onNavigate('admin-file-management'),
+       view: 'admin-file-management',
+       requiredRole: ROLES.ADMIN,
+       shouldShow: userRole === ROLES.ADMIN,
+     },
+     {
+       label: 'KPI Dashboard',
+       icon: <HiOutlineChartBar className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+       onClick: () => onNavigate('kpi-dashboard'),
+       view: 'kpi-dashboard',
+       requiredRole: ROLES.USER // Everyone can access
+     },
+     {
+       label: 'Records',
+       icon: <HiOutlineDocumentText className={`${isCollapsed ? 'w-7 h-7' : 'w-6 h-6'}`} />,
+       onClick: () => onNavigate('records'),
+       view: 'records',
+       requiredRole: ROLES.USER // Everyone can access
+     },
     {
       label: 'Notifications',
       icon: (

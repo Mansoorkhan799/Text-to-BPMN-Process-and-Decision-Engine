@@ -16,6 +16,8 @@ import dynamic from 'next/dynamic';
 import AdminFileManagement from './components/AdminFileManagement';
 import AIProcessGenerator from './components/AIProcessGenerator';
 import SettingsView from './components/SettingsView';
+import KPIDashboard from './components/KPIDashboard';
+import Records from './components/Records';
 
 // Import the BpmnEditor component dynamically to prevent SSR issues with browser APIs
 const BpmnEditor = dynamic(() => import('./components/BpmnEditor'), {
@@ -229,6 +231,21 @@ export default function Home() {
         {currentView === 'ai-process-generator' && (
           <main className="flex-1 w-full h-full overflow-hidden">
             <AIProcessGenerator user={user} />
+          </main>
+        )}
+
+        {currentView === 'kpi-dashboard' && (
+          <main className="flex-1 overflow-y-auto">
+            <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+              <KPIDashboard />
+            </div>
+          </main>
+        )}
+        {currentView === 'records' && (
+          <main className="flex-1 overflow-y-auto">
+            <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6">
+              <Records />
+            </div>
           </main>
         )}
 
