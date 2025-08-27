@@ -13,3 +13,4 @@
 
   e  ^E  j  ^N  CR  *  Forward  one line   (or _N lines).
   y  ^Y  k  ^K  ^P  *  Backward one line   (or _N lines).
+  f  ^F  ^V  SPACE  *  Forward  one window (or _N lines).
