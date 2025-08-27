@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getTokenFromCookies, verifyToken } from '@/app/utils/jwt';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function GET() {
   try {
     const token = getTokenFromCookies();

@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { cookies } from 'next/headers';
+import { NextRequest } from 'next/server';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
 const TOKEN_EXPIRY = '24h';
@@ -87,7 +88,19 @@ export const removeTokenCookie = () => {
 };
 
 export const getTokenFromCookies = (): string | undefined => {
-  return cookies().get('token')?.value;
+  try {
+    return cookies().get('token')?.value;
+  } catch (error) {
+    return undefined;
+  }
+};
+
+export const getTokenFromRequest = (request: NextRequest): string | undefined => {
+  try {
+    return request.cookies.get('token')?.value;
+  } catch (error) {
+    return undefined;
+  }
 };
 
 export const hashPassword = async (password: string) => {

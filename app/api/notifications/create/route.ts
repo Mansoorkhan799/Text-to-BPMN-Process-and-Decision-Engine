@@ -4,6 +4,10 @@ import connectDB from '@/lib/mongodb';
 import mongoose from 'mongoose';
 import { sendNotificationEmail } from '@/app/utils/email';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // POST endpoint to create a notification for BPMN approval
 export async function POST(request: NextRequest) {
     try {

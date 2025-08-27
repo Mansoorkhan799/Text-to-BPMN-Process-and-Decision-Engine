@@ -3,6 +3,10 @@ import { verifyToken } from '@/app/utils/jwt';
 import connectDB from '@/lib/mongodb';
 import mongoose from 'mongoose';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // Function to check similarity between two XML strings
 // This is a simple implementation - in a production environment, 
 // you might want a more sophisticated comparison algorithm

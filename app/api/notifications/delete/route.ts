@@ -4,6 +4,10 @@ import connectDB from '@/lib/mongodb';
 import mongoose from 'mongoose';
 import { ObjectId } from 'mongodb';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // DELETE endpoint to delete a notification
 export async function POST(request: NextRequest) {
     try {

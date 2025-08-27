@@ -5,6 +5,10 @@ import { cookies } from 'next/headers';
 import jwt from 'jsonwebtoken';
 import { ROLES } from '@/app/utils/permissions';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // Helper function to read the users file
 async function readUsersFile() {
   const filePath = path.join(process.cwd(), 'data', 'users.json');

@@ -3,6 +3,10 @@ import connectDB from '../../../../lib/mongodb';
 import bcrypt from 'bcryptjs';
 import { verifyJWT } from '../../../utils/jwt';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     // Verify user authentication

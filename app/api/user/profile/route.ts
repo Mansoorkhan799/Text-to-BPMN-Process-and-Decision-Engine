@@ -4,6 +4,10 @@ import User from '@/models/User';
 import jwt from 'jsonwebtoken';
 import { getTokenFromCookies, verifyToken } from '@/app/utils/jwt';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function PUT(request: NextRequest) {
   try {
     // Verify user is authenticated

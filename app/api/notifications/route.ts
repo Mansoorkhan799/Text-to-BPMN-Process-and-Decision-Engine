@@ -4,6 +4,10 @@ import connectDB from '@/lib/mongodb';
 import { ObjectId } from 'mongodb';
 import mongoose from 'mongoose';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // GET endpoint to fetch notifications for the current user
 export async function GET(request: NextRequest) {
     try {

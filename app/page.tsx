@@ -228,7 +228,7 @@ export default function Home() {
 
         {currentView === 'ai-process-generator' && (
           <main className="flex-1 w-full h-full overflow-hidden">
-            <AIProcessGenerator />
+            <AIProcessGenerator user={user} />
           </main>
         )}
 

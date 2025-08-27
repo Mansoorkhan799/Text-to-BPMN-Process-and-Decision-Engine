@@ -3,6 +3,10 @@ import { verifyToken } from '@/app/utils/jwt';
 import connectDB from '@/lib/mongodb';
 import mongoose from 'mongoose';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // GET endpoint to count pending notifications for the current user
 export async function GET(request: NextRequest) {
     try {

@@ -5,6 +5,10 @@ import mongoose from 'mongoose';
 import { ObjectId } from 'mongodb';
 import { sendStatusUpdateEmail } from '@/app/utils/email';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 // POST endpoint to process (approve/reject) a notification
 export async function POST(request: NextRequest) {
     try {
